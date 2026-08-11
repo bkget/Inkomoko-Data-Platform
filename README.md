@@ -1,7 +1,7 @@
-# Inkomoko Data Platform - Senior Data Engineer Assessment
+# Inkomoko Data Platform
 
 ## Architecture Overview
-This repository contains a production-grade, end-to-end data analytics platform designed for the Inkomoko Senior Data Engineer assessment. 
+This repository contains a production-grade, end-to-end data analytics platform designed for the Inkomoko setup. 
 
 The architecture simulates a modern, resilient, and highly scalable data stack capable of handling real-time streaming and massive analytical workloads, while being extremely conscious of hardware resource limitations.
 
