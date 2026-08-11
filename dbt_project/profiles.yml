@@ -1,0 +1,11 @@
+inkomoko:
+  target: dev
+  outputs:
+    dev:
+      type: clickhouse
+      schema: analytics
+      host: clickhouse
+      port: 8123
+      user: inkomoko_admin
+      password: inkomoko_password
+      secure: False
