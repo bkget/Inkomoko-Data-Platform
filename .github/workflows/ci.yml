@@ -59,7 +59,7 @@ jobs:
 
       - name: Install dbt-clickhouse
         run: |
-          pip install dbt-clickhouse mashumaro==3.13.1
+          pip install "dbt-clickhouse~=1.8.0" mashumaro==3.13.1
 
       - name: Validate dbt Syntax & Models
         run: |
@@ -134,7 +134,7 @@ jobs:
           CLICKHOUSE_USER: inkomoko_admin
           CLICKHOUSE_PASSWORD: inkomoko_password
         run: |
-          pip install dbt-clickhouse mashumaro==3.13.1
+          pip install "dbt-clickhouse~=1.8.0" mashumaro==3.13.1
           dbt run --project-dir dbt_project --profiles-dir dbt_project
           dbt test --project-dir dbt_project --profiles-dir dbt_project
 

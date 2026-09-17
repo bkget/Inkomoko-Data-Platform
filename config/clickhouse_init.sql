@@ -1,4 +1,9 @@
 CREATE DATABASE IF NOT EXISTS raw_data;
+CREATE DATABASE IF NOT EXISTS analytics;
+
+-- Ensure inkomoko_admin user has unrestricted privileges across all databases
+CREATE USER IF NOT EXISTS inkomoko_admin IDENTIFIED WITH plaintext_password BY 'inkomoko_password';
+GRANT ALL ON *.* TO inkomoko_admin WITH GRANT OPTION;
 
 -- 1. Kafka Engine Table: Connects directly to Redpanda to consume CDC events.
 -- `updated_at` is carried through even though it isn't used by any dbt model,

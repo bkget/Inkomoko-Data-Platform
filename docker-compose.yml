@@ -239,7 +239,7 @@ services:
     # NOTE: the version specifier is quoted below -- unquoted, `>` is parsed by
     # sh as output redirection, silently writing pip's stdout to a file
     # literally named `=1.7.0` in the bind-mounted /usr/app (dbt_project/).
-    command: ["sh", "-c", "pip install 'dbt-clickhouse>=1.7.0' mashumaro==3.13.1 && sleep infinity"]
+    command: ["sh", "-c", "pip install 'dbt-clickhouse~=1.8.0' mashumaro==3.13.1 && sleep infinity"]
     volumes:
       - ./dbt_project:/usr/app
       - ./dbt_project/profiles.yml:/root/.dbt/profiles.yml
@@ -263,7 +263,7 @@ services:
     container_name: inkomoko_dbt_docs
     # Version specifier quoted -- see note on the `dbt` service above.
     command: >
-      sh -c "pip install --no-cache-dir 'dbt-clickhouse>=1.7.0' mashumaro==3.13.1 &&
+      sh -c "pip install --no-cache-dir 'dbt-clickhouse~=1.8.0' mashumaro==3.13.1 &&
       (dbt docs generate --project-dir /usr/app --profiles-dir /usr/app || echo 'dbt docs generate failed, serving last known state') &&
       python -m http.server 8085 --directory /usr/app/target"
     volumes:
