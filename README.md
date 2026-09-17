@@ -69,7 +69,7 @@ The pipeline ingests real-time transactional loan records with the following sch
 * Git
 * ~4 GB of free RAM for the container set
 
-### 🚀 Quickstart for Reviewers (One Command via Make)
+### Quickstart the Systems
 The platform includes a production-grade `Makefile` that handles environment configuration, container dispatch, endpoint discovery, and validation with simple shortcuts:
 
 ```bash
