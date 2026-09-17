@@ -65,21 +65,32 @@ The pipeline ingests real-time transactional loan records with the following sch
 
 ### Prerequisites
 * Docker & Docker Compose (v2, i.e. the `docker compose` CLI, not `docker-compose`)
+* Make (`GNU Make 4.0+`)
 * Git
 * ~4 GB of free RAM for the container set
 
-### 1. Spin up the entire stack - one command
+### 🚀 Quickstart for Reviewers (One Command via Make)
+The platform includes a production-grade `Makefile` that handles environment configuration, container dispatch, endpoint discovery, and validation with simple shortcuts:
+
+```bash
+make up       # 1. Auto-initializes .env, boots all 16 containers, & prints all URLs
+make urls     # 2. Displays the complete reviewer dashboard with URLs and credentials
+make verify   # 3. Automatically validates all 6 stages of the data pipeline end-to-end
+make help     # 4. Interactive menu with all lifecycle, database, and debugging targets
+```
+
+*(Alternatively, standard Docker Compose commands are also fully supported):*
 ```bash
 cp .env.example .env   # optional: only needed if you want to override defaults
 docker compose up -d
 ```
-This single command starts **everything**: Postgres, Redpanda, Debezium, the `connector-registrar`, ClickHouse, `dbt-docs`, Dagster, `cdc-monitor`, `postgres-exporter`, Prometheus, Grafana, Redpanda Console, and the Debezium UI.
+This starts **everything**: Postgres, Redpanda, Debezium, the `connector-registrar`, ClickHouse, `dbt-docs`, Dagster, `cdc-monitor`, `postgres-exporter`, Prometheus, Grafana, Redpanda Console, and the Debezium UI.
 
 Give it 30–60 seconds on first boot for image pulls and healthchecks. Confirm everything is up:
 ```bash
-docker compose ps
+make ps       # or: docker compose ps
 ```
-All services should show `healthy` or `running`. If you ever need to re-register the connector manually (e.g. after editing `config/debezium_postgres_source.json.template`):
+All services should show `healthy` or `running`. If you ever need to re-register the connector manually:
 ```bash
 docker compose up connector-registrar
 ```
@@ -146,6 +157,8 @@ curl -s http://localhost:9200/metrics | grep -E "cdc_row_count_drift|cdc_replica
 ---
 
 ## Accessing the Platform
+
+> 💡 **Pro-Tip:** Run `make urls` in your terminal anytime to print this interactive dashboard with direct links and live credentials.
 
 | Service | URL | Credentials |
 |---|---|---|
