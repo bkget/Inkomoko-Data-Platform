@@ -156,29 +156,6 @@ curl -s http://localhost:9200/metrics | grep -E "cdc_row_count_drift|cdc_replica
 
 ---
 
-## Accessing the Platform
-
-> 💡 **Pro-Tip:** Run `make urls` in your terminal anytime to print this interactive dashboard with direct links and live credentials.
-
-| Service | URL | Credentials |
-|---|---|---|
-| Dagster (orchestration UI) | http://localhost:3000 | - |
-| Grafana (dashboards + alerts) | http://localhost:3001 | `admin` / `inkomoko` (see `.env`) |
-| Prometheus (raw metrics/targets) | http://localhost:9090 | - |
-| dbt-docs (lineage graph & catalog) | http://localhost:8085 | - |
-| Redpanda Console (topics/messages) | http://localhost:8080 | - |
-| Debezium UI (connector status) | http://localhost:8084 | - |
-| `cdc-monitor` raw metrics | http://localhost:9200/metrics | - |
-| Mailpit (captured alert emails) | http://localhost:8025 | - |
-| PostgreSQL (OLTP) | `localhost:5433` | `inkomoko_admin` / `inkomoko_password`, db `inkomoko_oltp` (see `.env`) |
-| ClickHouse HTTP interface | http://localhost:8123 | `inkomoko_admin` / `inkomoko_password` |
-| ClickHouse native TCP (for `clickhouse-client`) | `localhost:9000` | `inkomoko_admin` / `inkomoko_password` |
-| Debezium Kafka Connect REST API | http://localhost:8083 | - |
-
-All default credentials live in [`.env.example`](./.env.example) - copy it to `.env` to override them.
-
----
-
 ## Observability & Business Dashboards
 * **Grafana Dashboards:** http://localhost:3001 (`admin` / `inkomoko`)
   - **Inkomoko Pipeline Observability:** operational metrics - Redpanda throughput, ClickHouse memory/queries/write ops, Postgres-vs-ClickHouse row reconciliation, CDC replication lag, Debezium connector state, Postgres exporter status.
