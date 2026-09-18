@@ -25,11 +25,20 @@
             "id": 6,
             "title": "Executive Analytics Overview",
             "type": "text",
-            "gridPos": { "h": 8, "w": 24, "x": 0, "y": 0 },
+            "gridPos": {
+                "h": 7,
+                "w": 24,
+                "x": 0,
+                "y": 0
+            },
             "pluginVersion": "13.0.2",
             "options": {
-                "code": { "language": "plaintext", "showLineNumbers": false, "showMiniMap": false },
-                "content": "## Inkomoko Executive Loan Analytics Dashboard\n\nThis executive dashboard provides strategic portfolio intelligence, loan disbursement metrics, and demographic capital allocation across micro-entrepreneur lending programs powered by ClickHouse OLAP and dbt transformations.\n\n#### Key Analytical Scopes:\n- **Portfolio Health & Capital Volume**: Live tracking of total capital disbursed, portfolio-wide funding fulfillment rate, and unique micro-entrepreneurs supported.\n- **Sectoral Exposure**: Breakdown of loan funding volume across key industries (Agriculture, Retail, Food, Services, etc.) to evaluate capital allocation.\n- **Geographical Footprint**: Country-level capital distribution identifying high-impact lending regions across East African corridors (Rwanda, Kenya, Uganda, etc.).*",
+                "code": {
+                    "language": "plaintext",
+                    "showLineNumbers": false,
+                    "showMiniMap": false
+                },
+                "content": "## Inkomoko Executive Loan Analytics Dashboard\n\nThis executive dashboard provides strategic portfolio intelligence, loan disbursement metrics, and demographic capital allocation across micro-entrepreneur lending programs powered by ClickHouse OLAP and dbt transformations.\n\n#### Key Analytical Scopes:\n- **Portfolio Health & Capital Volume**: Live tracking of total capital disbursed, portfolio-wide funding fulfillment rate, and unique micro-entrepreneurs supported.\n- **Sectoral Exposure**: Breakdown of loan funding volume across key industries (Agriculture, Retail, Food, Services, etc.) to evaluate capital allocation.\n- **Geographical Footprint**: Country-level capital distribution identifying high-impact lending regions across East African corridors (Rwanda, Kenya, Uganda, etc.).",
                 "mode": "markdown"
             }
         },
@@ -59,7 +68,7 @@
                 "h": 6,
                 "w": 8,
                 "x": 0,
-                "y": 8
+                "y": 7
             },
             "id": 1,
             "options": {
@@ -74,7 +83,10 @@
                     "fields": "",
                     "values": false
                 },
-                "textMode": "auto"
+                "textMode": "auto",
+                "wideLayout": true,
+                "showPercentChange": false,
+                "percentChangeColorMode": "standard"
             },
             "pluginVersion": "13.0.2",
             "targets": [
@@ -83,12 +95,10 @@
                         "type": "vertamedia-clickhouse-datasource",
                         "uid": "clickhouse"
                     },
-                    "dateTimeType": "DATETIME",
-                    "extrapolate": true,
                     "format": "table",
-                    "formatted": true,
+                    "rawQuery": true,
                     "query": "SELECT sum(funded_amount) AS total_funded FROM analytics.int_loans_enriched",
-                    "rawQuery": "SELECT sum(funded_amount) AS total_funded FROM analytics.int_loans_enriched",
+                    "rawSql": "SELECT sum(funded_amount) AS total_funded FROM analytics.int_loans_enriched",
                     "refId": "A"
                 }
             ],
@@ -121,7 +131,7 @@
                 "h": 6,
                 "w": 8,
                 "x": 8,
-                "y": 8
+                "y": 7
             },
             "id": 2,
             "options": {
@@ -136,7 +146,10 @@
                     "fields": "",
                     "values": false
                 },
-                "textMode": "auto"
+                "textMode": "auto",
+                "wideLayout": true,
+                "showPercentChange": false,
+                "percentChangeColorMode": "standard"
             },
             "pluginVersion": "13.0.2",
             "targets": [
@@ -145,12 +158,10 @@
                         "type": "vertamedia-clickhouse-datasource",
                         "uid": "clickhouse"
                     },
-                    "dateTimeType": "DATETIME",
-                    "extrapolate": true,
                     "format": "table",
-                    "formatted": true,
+                    "rawQuery": true,
                     "query": "SELECT round(avg(funding_percentage), 2) AS avg_funding_rate FROM analytics.int_loans_enriched",
-                    "rawQuery": "SELECT round(avg(funding_percentage), 2) AS avg_funding_rate FROM analytics.int_loans_enriched",
+                    "rawSql": "SELECT round(avg(funding_percentage), 2) AS avg_funding_rate FROM analytics.int_loans_enriched",
                     "refId": "A"
                 }
             ],
@@ -182,7 +193,7 @@
                 "h": 6,
                 "w": 8,
                 "x": 16,
-                "y": 8
+                "y": 7
             },
             "id": 3,
             "options": {
@@ -197,7 +208,10 @@
                     "fields": "",
                     "values": false
                 },
-                "textMode": "auto"
+                "textMode": "auto",
+                "wideLayout": true,
+                "showPercentChange": false,
+                "percentChangeColorMode": "standard"
             },
             "pluginVersion": "13.0.2",
             "targets": [
@@ -206,12 +220,10 @@
                         "type": "vertamedia-clickhouse-datasource",
                         "uid": "clickhouse"
                     },
-                    "dateTimeType": "DATETIME",
-                    "extrapolate": true,
                     "format": "table",
-                    "formatted": true,
+                    "rawQuery": true,
                     "query": "SELECT count(DISTINCT loan_id) AS total_entrepreneurs FROM analytics.int_loans_enriched",
-                    "rawQuery": "SELECT count(DISTINCT loan_id) AS total_entrepreneurs FROM analytics.int_loans_enriched",
+                    "rawSql": "SELECT count(DISTINCT loan_id) AS total_entrepreneurs FROM analytics.int_loans_enriched",
                     "refId": "A"
                 }
             ],
@@ -228,14 +240,27 @@
                     "color": {
                         "mode": "palette-classic"
                     },
-                    "unit": "currencyUSD"
+                    "unit": "currencyUSD",
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": 0
+                            },
+                            {
+                                "color": "red",
+                                "value": 80
+                            }
+                        ]
+                    }
                 }
             },
             "gridPos": {
                 "h": 10,
                 "w": 12,
                 "x": 0,
-                "y": 14
+                "y": 13
             },
             "id": 4,
             "options": {
@@ -246,7 +271,19 @@
                     "fields": "",
                     "values": true
                 },
-                "showUnfilled": true
+                "showUnfilled": true,
+                "legend": {
+                    "calcs": [],
+                    "displayMode": "list",
+                    "placement": "bottom",
+                    "showLegend": false
+                },
+                "maxVizHeight": 300,
+                "minVizHeight": 16,
+                "minVizWidth": 8,
+                "namePlacement": "auto",
+                "sizing": "auto",
+                "valueMode": "color"
             },
             "pluginVersion": "13.0.2",
             "targets": [
@@ -255,12 +292,10 @@
                         "type": "vertamedia-clickhouse-datasource",
                         "uid": "clickhouse"
                     },
-                    "dateTimeType": "DATETIME",
-                    "extrapolate": true,
                     "format": "table",
-                    "formatted": true,
+                    "rawQuery": true,
                     "query": "SELECT sector, sum(funded_amount) AS total_funded FROM analytics.int_loans_enriched GROUP BY sector ORDER BY total_funded DESC LIMIT 8",
-                    "rawQuery": "SELECT sector, sum(funded_amount) AS total_funded FROM analytics.int_loans_enriched GROUP BY sector ORDER BY total_funded DESC LIMIT 8",
+                    "rawSql": "SELECT sector, sum(funded_amount) AS total_funded FROM analytics.int_loans_enriched GROUP BY sector ORDER BY total_funded DESC LIMIT 8",
                     "refId": "A"
                 }
             ],
@@ -277,14 +312,21 @@
                     "color": {
                         "mode": "palette-classic"
                     },
-                    "unit": "currencyUSD"
+                    "unit": "currencyUSD",
+                    "custom": {
+                        "hideFrom": {
+                            "legend": false,
+                            "tooltip": false,
+                            "viz": false
+                        }
+                    }
                 }
             },
             "gridPos": {
                 "h": 10,
                 "w": 12,
                 "x": 12,
-                "y": 14
+                "y": 13
             },
             "id": 5,
             "options": {
@@ -304,8 +346,11 @@
                     "values": true
                 },
                 "tooltip": {
-                    "mode": "single"
-                }
+                    "hideZeros": false,
+                    "mode": "single",
+                    "sort": "none"
+                },
+                "sort": "desc"
             },
             "pluginVersion": "13.0.2",
             "targets": [
@@ -314,12 +359,10 @@
                         "type": "vertamedia-clickhouse-datasource",
                         "uid": "clickhouse"
                     },
-                    "dateTimeType": "DATETIME",
-                    "extrapolate": true,
                     "format": "table",
-                    "formatted": true,
+                    "rawQuery": true,
                     "query": "SELECT country, sum(funded_amount) AS total_funded FROM analytics.int_loans_enriched GROUP BY country ORDER BY total_funded DESC LIMIT 8",
-                    "rawQuery": "SELECT country, sum(funded_amount) AS total_funded FROM analytics.int_loans_enriched GROUP BY country ORDER BY total_funded DESC LIMIT 8",
+                    "rawSql": "SELECT country, sum(funded_amount) AS total_funded FROM analytics.int_loans_enriched GROUP BY country ORDER BY total_funded DESC LIMIT 8",
                     "refId": "A"
                 }
             ],
@@ -334,8 +377,22 @@
         "from": "now-30m",
         "to": "now"
     },
+    "timepicker": {
+        "refresh_intervals": [
+            "5s",
+            "10s",
+            "30s",
+            "1m",
+            "5m",
+            "15m",
+            "30m",
+            "1h",
+            "2h",
+            "1d"
+        ]
+    },
     "timezone": "browser",
     "title": "Inkomoko Executive Loan Analytics",
     "uid": "exec_analytics",
-    "version": 5
+    "version": 9
 }

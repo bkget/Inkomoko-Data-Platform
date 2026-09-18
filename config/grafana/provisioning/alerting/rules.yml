@@ -100,7 +100,7 @@ groups:
           severity: warning
         annotations:
           summary: "No rows inserted into ClickHouse in the last 5 minutes"
-          description: "rate(ClickHouseProfileEvents_InsertedRows[5m]) has been ~0. Expected during idle periods between Dagster runs; investigate if it persists across a scheduled ingestion window."
+          description: "rate(ClickHouseProfileEvents_InsertedRows[5m]) has been ~0. Expected during idle periods between Airflow DAG runs; investigate if it persists across a scheduled ingestion window."
         data:
           - refId: A
             relativeTimeRange: { from: 300, to: 0 }
@@ -117,3 +117,31 @@ groups:
               expression: A
               conditions:
                 - evaluator: { type: lt, params: [0.0001] }
+
+      - uid: kiva-ingestion-stalled
+        title: "Kiva ingestion job has not run recently"
+        condition: C
+        for: 15m
+        noDataState: NoData
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: "No Kiva loan data has been ingested in the last 30 minutes"
+          description: "ingestion_last_activity_timestamp_seconds (MAX(ingested_at) in Postgres, exposed by cdc-monitor) is more than 30 minutes old. Either the Airflow DAG stopped executing or the Kiva API has been failing. Unlike ClickHouse insert rate, this is unaffected by CDC fan-out or re-ingestion of identical rows."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: time() - ingestion_last_activity_timestamp_seconds
+              instant: true
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [1800] }

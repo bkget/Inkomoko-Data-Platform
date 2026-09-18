@@ -7,14 +7,13 @@ datasources:
     access: proxy
     url: http://clickhouse:8123
     basicAuth: true
-    basicAuthUser: inkomoko_admin
+    basicAuthUser: ${CLICKHOUSE_USER}
     jsonData:
       addCorsHeader: true
       defaultDatabase: analytics
-      user: inkomoko_admin
-      username: inkomoko_admin
-      password: inkomoko_password
+      user: ${CLICKHOUSE_USER}
+      username: ${CLICKHOUSE_USER}
     secureJsonData:
-      basicAuthPassword: inkomoko_password
-      password: inkomoko_password
-    editable: true
+      basicAuthPassword: ${CLICKHOUSE_PASSWORD}
+      password: ${CLICKHOUSE_PASSWORD}
+    editable: false
