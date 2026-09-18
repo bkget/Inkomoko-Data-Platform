@@ -63,7 +63,10 @@ help: ## Show this interactive help dashboard with command explanations
 	@echo -e "  $(BOLD)1.$(RESET) $(CYAN)make up$(RESET)       -> Boots the full 16-container platform & reveals all URLs"
 	@echo -e "  $(BOLD)2.$(RESET) $(CYAN)make urls$(RESET)     -> Displays all web interfaces, endpoints, and credentials"
 	@echo -e "  $(BOLD)3.$(RESET) $(CYAN)make verify$(RESET)   -> Automatically checks all 6 stages of the data pipeline"
-	@echo -e "  $(BOLD)4.$(RESET) $(CYAN)make down$(RESET)     -> Stops all containers safely\n"
+	@echo -e "  $(BOLD)4.$(RESET) $(CYAN)make ps$(RESET)       -> Lists all active & inactive containers with health status"
+	@echo -e "  $(BOLD)5.$(RESET) $(CYAN)make stop$(RESET)     -> Stops active containers without removing them"
+	@echo -e "  $(BOLD)6.$(RESET) $(CYAN)make down$(RESET)     -> Stops and removes all containers & networks safely"
+	@echo -e "  $(BOLD)7.$(RESET) $(CYAN)make clear$(RESET)    -> Wipes all containers, database volumes, and caches\n"
 
 ##@ Reviewer Access & Documentation
 .PHONY: urls endpoints info
@@ -113,11 +116,17 @@ up start: init ## Start the entire 16-container platform in detached mode and pr
 	@echo -e "$(BOLD)$(GREEN)[✓] All services dispatched successfully!$(RESET)"
 	@$(MAKE) --no-print-directory urls
 
-.PHONY: down stop
-down stop: ## Stop and remove all running containers safely
-	@echo -e "$(YELLOW)[*] Stopping all Inkomoko services...$(RESET)"
+.PHONY: stop
+stop: ## Stop active running containers without removing them
+	@echo -e "$(YELLOW)[*] Stopping active Inkomoko containers...$(RESET)"
+	@docker compose stop
+	@echo -e "$(GREEN)[✓] Active containers stopped.$(RESET)"
+
+.PHONY: down
+down: ## Stop and remove all running containers and networks
+	@echo -e "$(YELLOW)[*] Tearing down Inkomoko stack (stopping & removing containers)...$(RESET)"
 	@docker compose down
-	@echo -e "$(GREEN)[✓] Stack stopped successfully.$(RESET)"
+	@echo -e "$(GREEN)[✓] Stack stopped and removed successfully.$(RESET)"
 
 .PHONY: restart
 restart: ## Restart all containers or a specific service (e.g. make restart svc=clickhouse)
@@ -131,22 +140,29 @@ restart: ## Restart all containers or a specific service (e.g. make restart svc=
 		echo -e "$(GREEN)[✓] Full stack restarted.$(RESET)"; \
 	fi
 
-.PHONY: ps status
-ps status: ## List running services and their healthcheck states
-	@echo -e "\n$(BOLD)$(CYAN)=== Container Status & Healthchecks ===$(RESET)\n"
+.PHONY: ps status ps-all
+ps status ps-all: ## List all containers (both active and inactive) with health status
+	@echo -e "\n$(BOLD)$(CYAN)=== All Containers Status (Active & Inactive) ===$(RESET)\n"
+	@docker compose ps -a
+
+.PHONY: ps-active
+ps-active: ## List only currently active running containers
+	@echo -e "\n$(BOLD)$(CYAN)=== Currently Active Running Containers ===$(RESET)\n"
 	@docker compose ps
 
-.PHONY: clean
-clean: ## Stop containers, remove named volumes, networks, and orphaned resources
+.PHONY: clean clear
+clean clear: ## Clear containers, remove named volumes, networks, and local build artifacts
 	@echo -e "$(BOLD)$(RED)[!] WARNING: This will destroy all database volumes and local caches.$(RESET)"
-	@read -p "Are you sure you want to clean everything? [y/N] " confirm; \
-	if [ "$$confirm" = "y" ] || [ "$$confirm" = "Y" ]; then \
-		docker compose down -v --remove-orphans; \
-		rm -rf dbt_project/target dbt_project/dbt_packages; \
-		echo -e "$(GREEN)[✓] Clean completed. Platform is in pristine initial state.$(RESET)"; \
-	else \
-		echo -e "$(DIM)[i] Clean aborted.$(RESET)"; \
-	fi
+	@if [ -t 0 ] && [ "$(force)" != "true" ] && [ "$(force)" != "1" ]; then \
+		read -p "Are you sure you want to clear everything? [y/N] " confirm; \
+		if [ "$$confirm" != "y" ] && [ "$$confirm" != "Y" ]; then \
+			echo -e "$(DIM)[i] Clear aborted.$(RESET)"; \
+			exit 0; \
+		fi; \
+	fi; \
+	docker compose down -v --remove-orphans; \
+	rm -rf dbt_project/target dbt_project/dbt_packages; \
+	echo -e "$(GREEN)[✓] Clear completed. Database volumes and containers removed.$(RESET)"
 
 .PHONY: reset
 reset: clean up ## Full reset: wipe volumes, rebuild, and re-launch stack from scratch

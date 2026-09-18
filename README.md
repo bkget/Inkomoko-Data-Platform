@@ -76,7 +76,8 @@ The platform includes a production-grade `Makefile` that handles environment con
 make up       # 1. Auto-initializes .env, boots all 16 containers, & prints all URLs
 make urls     # 2. Displays the complete reviewer dashboard with URLs and credentials
 make verify   # 3. Automatically validates all 6 stages of the data pipeline end-to-end
-make help     # 4. Interactive menu with all lifecycle, database, and debugging targets
+make ps       # 4. Lists all active & inactive containers with healthcheck statuses
+make help     # 5. Interactive menu with all lifecycle, database, and debugging targets
 ```
 
 *(Alternatively, standard Docker Compose commands are also fully supported):*
@@ -88,12 +89,25 @@ This starts **everything**: Postgres, Redpanda, Debezium, the `connector-registr
 
 Give it 30–60 seconds on first boot for image pulls and healthchecks. Confirm everything is up:
 ```bash
-make ps       # or: docker compose ps
+make ps       # or: docker compose ps -a (lists both active and inactive containers)
 ```
 All services should show `healthy` or `running`. If you ever need to re-register the connector manually:
 ```bash
 docker compose up connector-registrar
 ```
+
+### Container Operations & Lifecycle (Stopping, Clearing & Listing)
+
+The platform provides dedicated `make` targets to inspect, stop, and wipe containers:
+
+| Operation | Make Command | Underlying Docker Action | Description |
+| :--- | :--- | :--- | :--- |
+| **List All (Active & Inactive)** | `make ps` *(or `make ps-all` / `make status`)* | `docker compose ps -a` | Displays status, uptime, exit codes, and healthchecks for **both active and inactive/stopped** containers. |
+| **List Active Only** | `make ps-active` | `docker compose ps` | Filters and displays **only currently running** containers. |
+| **Stop Active Containers** | `make stop` | `docker compose stop` | Gracefully **stops active containers** without removing them (preserves container states and network definitions). |
+| **Stop & Remove Containers** | `make down` | `docker compose down` | Gracefully **stops and removes all containers and internal networks**. |
+| **Clear Containers & Volumes** | `make clear` *(or `make clean`)* | `docker compose down -v --remove-orphans` | Completely tears down containers, networks, **deletes persistent database volumes** (`pg_data`, `redpanda_data`, `ch_data`), and clears local dbt build artifacts. *(Pass `force=true` for non-interactive scripts).* |
+| **Full Clean Reset** | `make reset` | `make clean && make up` | Wipes volumes/containers to a clean slate, then boots and re-initializes the entire stack fresh. |
 
 ### 2. Run the Orchestration Pipeline (Dagster)
 Open your browser and navigate to **[http://localhost:3000](http://localhost:3000)**.
