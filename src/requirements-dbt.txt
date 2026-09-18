@@ -1,0 +1,2 @@
+dbt-clickhouse==1.8.9
+mashumaro==3.13.1

@@ -22,7 +22,7 @@ SELECT
         ELSE 'Needs Funding'
     END AS funding_tier,
     
-    ROUND((funded_amount / NULLIF(loan_amount, 0)) * 100, 2) AS funding_percentage,
+    {{ safe_ratio('funded_amount', 'loan_amount', 2, 100) }} AS funding_percentage,
 
     activity,
     sector,

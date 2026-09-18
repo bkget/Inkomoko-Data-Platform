@@ -1,0 +1,12 @@
+FROM python:3.11-slim
+
+# Image for the `dbt` service, which both executes dbt models/tests (via
+# `docker exec`) and serves the generated dbt documentation site on :8081.
+# Python 3.11 avoids the mashumaro compatibility bug that plagues
+# newer interpreters, and deps are pre-installed at build time so the
+# container boots instantly instead of running `pip install` at every start.
+WORKDIR /usr/app
+
+COPY src/requirements-dbt.txt /tmp/requirements-dbt.txt
+RUN pip install --no-cache-dir -r /tmp/requirements-dbt.txt \
+    && rm /tmp/requirements-dbt.txt
