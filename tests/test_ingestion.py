@@ -11,7 +11,7 @@ from ingest_api import fetch_loans, upsert_loans
 class TestKivaIngestion(unittest.TestCase):
     """Unit tests for the Kiva REST API ingestion pipeline."""
 
-    @patch("ingest_api.requests.get")
+    @patch("ingest_api._session.get")
     def test_fetch_loans_success(self, mock_get):
         """Test successful loan fetching from Kiva API."""
         mock_response = MagicMock()
@@ -29,15 +29,17 @@ class TestKivaIngestion(unittest.TestCase):
         self.assertEqual(loans[0]["id"], 101)
         self.assertEqual(loans[0]["name"], "Kigali Retail Store")
 
-    @patch("ingest_api.requests.get")
+    @patch("ingest_api._session.get")
     def test_fetch_loans_retry_failure(self, mock_get):
         """Test exponential backoff retry behavior on API failure."""
         import requests
         mock_get.side_effect = requests.exceptions.RequestException("API connection timeout")
-        
+
         with self.assertRaises(Exception) as context:
             fetch_loans(page=1)
         self.assertIn("Failed to fetch data from API", str(context.exception))
+        # Each of the 3 attempts issues a request from the shared session.
+        self.assertEqual(mock_get.call_count, 3)
 
     def test_upsert_loans_empty(self):
         """Test upsert behavior with empty input list."""
@@ -69,6 +71,40 @@ class TestKivaIngestion(unittest.TestCase):
         self.assertEqual(count, 1)
         mock_cursor.executemany.assert_called_once()
         mock_conn.commit.assert_called_once()
+
+    def test_upsert_loans_db_error_propagates(self):
+        """Test that database failures raise instead of being silently swallowed.
+
+        A swallowed error would let Airflow mark the run as SUCCESS even though
+        nothing was written to the OLTP source of truth.
+        """
+        import psycopg
+        from ingest_api import upsert_loans
+
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.executemany.side_effect = psycopg.OperationalError("connection lost")
+        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+
+        test_loans = [
+            {
+                "id": 201,
+                "name": "Rubavu Tailoring",
+                "status": "funded",
+                "funded_amount": 300,
+                "loan_amount": 300,
+                "activity": "Tailoring",
+                "sector": "Services",
+                "location": {"country": "Rwanda", "town": "Rubavu"},
+                "posted_date": "2026-08-10T10:00:00Z",
+            }
+        ]
+
+        with self.assertRaises(psycopg.OperationalError):
+            upsert_loans(mock_conn, test_loans)
+
+        mock_conn.rollback.assert_called_once()
+        mock_conn.commit.assert_not_called()
 
 if __name__ == "__main__":
     unittest.main()

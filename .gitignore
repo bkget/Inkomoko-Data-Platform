@@ -8,11 +8,13 @@ env/
 .env
 .tmp*
 
-# Dagster
+# Airflow & Databases
 *.db
 *.log
-.dagster/
-dagster_home/
+airflow.cfg
+airflow.db
+logs/
+.airflow/
 
 # dbt
 dbt_project/target/
