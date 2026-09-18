@@ -1,0 +1,14 @@
+FROM python:3.11-slim
+
+# CDC reconciliation & freshness exporter (src/cdc_monitor.py).
+# The live code is bind-mounted from ./src so it can be edited/reloaded without
+# a rebuild; this image only pre-installs the pinned runtime dependencies.
+WORKDIR /app
+
+COPY src/requirements-cdc-monitor.txt /tmp/requirements-cdc-monitor.txt
+RUN pip install --no-cache-dir -r /tmp/requirements-cdc-monitor.txt \
+    && rm /tmp/requirements-cdc-monitor.txt
+
+EXPOSE 9200
+
+CMD ["python", "cdc_monitor.py"]

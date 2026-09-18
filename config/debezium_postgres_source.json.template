@@ -1,5 +1,5 @@
 {
-  "name": "inkomoko-postgres-connector",
+  "name": "${DEBEZIUM_CONNECTOR_NAME}",
   "config": {
     "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
     "tasks.max": "1",
@@ -21,6 +21,6 @@
     "transforms.unwrap.drop.tombstones": "false",
     "transforms.unwrap.delete.handling.mode": "rewrite",
     "transforms.unwrap.add.fields": "op,ts_ms",
-    "decimal.handling.mode": "double"
+    "decimal.handling.mode": "string"
   }
 }

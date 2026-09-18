@@ -1,4 +1,4 @@
--- Create schema for Inkomoko raw data
+-- Create schema for raw data
 CREATE SCHEMA IF NOT EXISTS raw_data;
 
 -- Set up the loans table to store Kiva micro-loans data

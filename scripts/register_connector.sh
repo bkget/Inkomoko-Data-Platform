@@ -5,7 +5,7 @@
 set -eu
 
 CONNECT_URL="${DEBEZIUM_URL:-http://debezium:8083}"
-CONNECTOR_NAME="${DEBEZIUM_CONNECTOR_NAME:-inkomoko-postgres-connector}"
+CONNECTOR_NAME="${DEBEZIUM_CONNECTOR_NAME:?DEBEZIUM_CONNECTOR_NAME must be set in .env}"
 TEMPLATE="/config/debezium_postgres_source.json.template"
 RENDERED="/tmp/debezium_postgres_source.json"
 

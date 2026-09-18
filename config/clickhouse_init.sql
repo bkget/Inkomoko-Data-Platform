@@ -6,6 +6,12 @@ CREATE DATABASE IF NOT EXISTS analytics;
 -- because it is what lets cdc-monitor compute a real, row-level CDC freshness
 -- lag (now() - max(source_updated_at)) instead of a synthetic sleep/heuristic.
 -- posted_date/updated_at are declared Nullable(Int64), NOT String or DateTime.
+-- `__ts_ms` is Debezium's per-event message timestamp (ms epoch), emitted by the
+-- connector's ExtractNewRecordState transform (add.fields=op,ts_ms). It is used
+-- as the ReplacingMergeTree version below so concurrent updates to the same row
+-- resolve to the LATEST event instead of whatever write happened to land in the
+-- same second (the previous `now()`-based version had second granularity and
+-- could silently drop a legitimate update occurring within the same second).
 CREATE TABLE IF NOT EXISTS raw_data.kafka_kiva_loans_cdc (
     id Int64,
     name String,
@@ -19,7 +25,8 @@ CREATE TABLE IF NOT EXISTS raw_data.kafka_kiva_loans_cdc (
     posted_date Nullable(Int64),
     updated_at Nullable(Int64),
     __op String,
-    __deleted String
+    __deleted String,
+    __ts_ms Int64
 ) ENGINE = Kafka
 SETTINGS kafka_broker_list = 'redpanda:29092',
          kafka_topic_list = 'cdc.raw_data.kiva_loans',
@@ -31,6 +38,9 @@ SETTINGS kafka_broker_list = 'redpanda:29092',
 -- (Kiva loan history spans years, not decades) and enables cheap partition-level
 -- operations (TTL/drop/backfill) as volume grows -- see docs/design-report.md
 -- for the full ClickHouse table-design rationale.
+-- A 5-year TTL on posted_date keeps the warehouse bounded: loans older than that
+-- are expired out of the raw table automatically, matching a micro-finance
+-- analytics horizon while keeping partitions cheap to merge.
 CREATE TABLE IF NOT EXISTS raw_data.kiva_loans_raw (
     id Int64,
     name String,
@@ -48,7 +58,8 @@ CREATE TABLE IF NOT EXISTS raw_data.kiva_loans_raw (
     _version UInt64
 ) ENGINE = ReplacingMergeTree(_version)
 PARTITION BY toYYYYMM(posted_date)
-ORDER BY (id);
+ORDER BY (id)
+TTL posted_date + INTERVAL 5 YEAR;
 
 -- 3. Materialized View: Moves data from Kafka stream into the Raw Table instantly
 CREATE MATERIALIZED VIEW IF NOT EXISTS raw_data.kiva_loans_mv TO raw_data.kiva_loans_raw AS
@@ -66,5 +77,5 @@ SELECT
     toDateTime(fromUnixTimestamp64Micro(ifNull(updated_at, 0))) AS source_updated_at,
     __op AS _op,
     if(__deleted = 'true', 1, 0) AS is_deleted,
-    toUInt64(now()) AS _version
+    toUInt64(ifNull(__ts_ms, 0)) AS _version
 FROM raw_data.kafka_kiva_loans_cdc;

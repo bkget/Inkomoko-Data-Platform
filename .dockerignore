@@ -1,0 +1,36 @@
+# Version control
+.git
+.gitignore
+.gitattributes
+
+# Python virtual environments & caches (two live venvs live in this repo:
+#  /.venv (local tooling) and /dbt_project/.venv (local dbt) - neither should
+#  ever be shipped to a Docker build context)
+.venv
+**/.venv
+**/__pycache__
+*.py[cod]
+.pytest_cache
+.env
+
+# Heavy artifacts not needed by any Dockerfile
+architecture.png
+docs/
+.github/
+Makefile
+pytest.ini
+.flake8
+tests/
+
+# dbt build outputs & local fixtures
+dbt_project/target/
+dbt_project/dbt_packages/
+dbt_project/logs/
+dbt_project/.user.yml
+
+# Airflow & databases
+*.db
+*.log
+airflow.cfg
+logs/
+.airflow/

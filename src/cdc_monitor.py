@@ -11,6 +11,8 @@ comparison as Prometheus metrics:
   - cdc_row_count_drift           : postgres_count - clickhouse_count
   - cdc_replication_lag_seconds   : now() - max(source_updated_at) seen in ClickHouse,
                                      i.e. how stale the newest replicated row is
+  - ingestion_last_activity_timestamp_seconds : MAX(ingested_at) in Postgres, i.e.
+                                     when the Kiva ingestion job last ran successfully
   - debezium_connector_state      : 1 if the connector + all tasks are RUNNING, else 0
   - debezium_connector_failed_tasks : number of tasks currently in FAILED state
   - cdc_monitor_scrape_errors_total : counter of failed polling attempts, by source
@@ -31,17 +33,17 @@ from prometheus_client import Counter, Gauge, start_http_server
 
 DB_HOST = os.getenv("DB_HOST", "localhost")
 DB_PORT = os.getenv("DB_PORT", "5433")
-DB_USER = os.getenv("DB_USER", "inkomoko_admin")
-DB_PASS = os.getenv("DB_PASS", "inkomoko_password")
-DB_NAME = os.getenv("DB_NAME", "inkomoko_oltp")
+DB_USER = os.getenv("DB_USER")
+DB_PASS = os.getenv("DB_PASS")
+DB_NAME = os.getenv("DB_NAME")
 
 CLICKHOUSE_HOST = os.getenv("CLICKHOUSE_HOST", "localhost")
 CLICKHOUSE_PORT = os.getenv("CLICKHOUSE_PORT", "8123")
-CLICKHOUSE_USER = os.getenv("CLICKHOUSE_USER", "inkomoko_admin")
-CLICKHOUSE_PASSWORD = os.getenv("CLICKHOUSE_PASSWORD", "inkomoko_password")
+CLICKHOUSE_USER = os.getenv("CLICKHOUSE_USER")
+CLICKHOUSE_PASSWORD = os.getenv("CLICKHOUSE_PASSWORD")
 
 DEBEZIUM_URL = os.getenv("DEBEZIUM_URL", "http://localhost:8083")
-DEBEZIUM_CONNECTOR_NAME = os.getenv("DEBEZIUM_CONNECTOR_NAME", "inkomoko-postgres-connector")
+DEBEZIUM_CONNECTOR_NAME = os.getenv("DEBEZIUM_CONNECTOR_NAME")
 
 POLL_INTERVAL_SECONDS = float(os.getenv("POLL_INTERVAL_SECONDS", "15"))
 METRICS_PORT = int(os.getenv("METRICS_PORT", "9200"))
@@ -51,8 +53,19 @@ METRICS_PORT = int(os.getenv("METRICS_PORT", "9200"))
 postgres_row_count = Gauge("cdc_postgres_row_count", "Row count in the Postgres source-of-truth table")
 clickhouse_row_count = Gauge("cdc_clickhouse_row_count", "Deduplicated row count in the ClickHouse CDC raw table")
 row_count_drift = Gauge("cdc_row_count_drift", "postgres_row_count - clickhouse_row_count")
-replication_lag_seconds = Gauge("cdc_replication_lag_seconds", "Seconds between now() and the newest source_updated_at replicated into ClickHouse")
-connector_state = Gauge("debezium_connector_state", "1 if the Debezium connector and all tasks are RUNNING, else 0", ["connector"])
+replication_lag_seconds = Gauge(
+    "cdc_replication_lag_seconds",
+    "Seconds between now() and the newest source_updated_at replicated into ClickHouse",
+)
+ingestion_last_activity = Gauge(
+    "ingestion_last_activity_timestamp_seconds",
+    "Unix timestamp of the newest MAX(ingested_at) in Postgres - when the Kiva ingestion job last ran",
+)
+connector_state = Gauge(
+    "debezium_connector_state",
+    "1 if the Debezium connector and all tasks are RUNNING, else 0",
+    ["connector"],
+)
 connector_failed_tasks = Gauge("debezium_connector_failed_tasks", "Number of Debezium connector tasks currently in FAILED state", ["connector"])
 scrape_errors_total = Counter("cdc_monitor_scrape_errors_total", "Number of failed polling attempts, by data source", ["source"])
 last_success_timestamp = Gauge("cdc_monitor_last_success_timestamp_seconds", "Unix timestamp of the last fully successful poll of all sources")
@@ -93,6 +106,22 @@ def fetch_postgres_row_count() -> int:
         with conn.cursor() as cur:
             cur.execute("SELECT COUNT(*) FROM raw_data.kiva_loans;")
             return cur.fetchone()[0]
+
+
+def fetch_postgres_max_ingested_at() -> Optional[datetime]:
+    """When did the Kiva ingestion job last write to the source table?
+
+    None means nothing has ever been ingested (fresh stack, no DAG runs yet).
+    """
+    with psycopg.connect(host=DB_HOST, port=DB_PORT, dbname=DB_NAME, user=DB_USER, password=DB_PASS, connect_timeout=5) as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT MAX(ingested_at) FROM raw_data.kiva_loans;")
+            value = cur.fetchone()[0]
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value
 
 
 def _clickhouse_query(query: str) -> str:
@@ -145,6 +174,15 @@ def poll_once() -> None:
     except Exception as exc:  # noqa: BLE001 - one bad source should not kill the loop
         print(f"[cdc_monitor] postgres poll failed: {exc}")
         scrape_errors_total.labels(source="postgres").inc()
+        all_ok = False
+
+    try:
+        max_ingested_at = fetch_postgres_max_ingested_at()
+        if max_ingested_at is not None:
+            ingestion_last_activity.set(max_ingested_at.timestamp())
+    except Exception as exc:  # noqa: BLE001
+        print(f"[cdc_monitor] postgres ingestion-activity poll failed: {exc}")
+        scrape_errors_total.labels(source="postgres_ingestion").inc()
         all_ok = False
 
     try:
