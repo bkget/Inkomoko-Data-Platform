@@ -17,6 +17,8 @@ This document details what is actually deployed and scraped in this repository �
 ### 2. Data Freshness & CDC Replication Lag
 - **`cdc_replication_lag_seconds`** — `now() - max(source_updated_at)` of the newest row visible in `raw_data.kiva_loans_raw`. `source_updated_at` is Postgres's own `updated_at` column, carried through the Kafka-engine table and materialized view specifically so this is a real, row-level freshness measurement rather than an inferred proxy. Computed by `src/cdc_monitor.py`.
 - **`cdc_row_count_drift`** — `cdc_postgres_row_count - cdc_clickhouse_row_count`, i.e. a direct reconciliation between the OLTP source of truth and the deduplicated CDC target. This is the most direct possible answer to "did we lose any CDC events?" and is deliberately independent of Debezium's own internal offset bookkeeping.
+- **`ingestion_last_activity_timestamp_seconds`** — `MAX(ingested_at)` in Postgres, i.e. when the Kiva ingestion job last wrote to the source table. Because re-ingesting identical rows bumps `updated_at` but not necessarily the ClickHouse insert-rate counter, this is the reliable signal for "the orchestrator job stopped running" (`kiva-ingestion-stalled`).
+- **dbt source freshness** — enforced inside the Airflow DAG itself (`dbt source freshness` after `dbt test`): the `loaded_at_field` of `raw_data.kiva_loans_raw` is `source_updated_at`, with `warn_after 15m` / `error_after 30m` declared in `dbt_project/models/staging/src_kiva.yml`. A pipeline whose CDC path is healthy but whose ingestion stopped is caught at the transformation layer *and* by the Prometheus `kiva-ingestion-stalled` rule — two independent gates.
 - Both metrics are polled every `POLL_INTERVAL_SECONDS` (default 15s) and exposed on `cdc-monitor:9200/metrics`.
 
 ### 3. CDC Connector Health
@@ -28,7 +30,7 @@ This document details what is actually deployed and scraped in this repository �
 - Every service in `docker-compose.yml` has an explicit `deploy.resources.limits.memory`, so container-level exhaustion shows up as an OOM-killed container (visible via `docker compose ps`/`docker stats`) rather than silent host thrashing.
 
 ### 5. Exporter Self-Health
-- **`cdc_monitor_scrape_errors_total`** (by source: `postgres`, `clickhouse`, `clickhouse_lag`, `debezium`) and **`cdc_monitor_last_success_timestamp_seconds`** — the monitor's own reliability is itself observable: a stuck or half-failing exporter is distinguishable from "everything is fine, zero drift."
+- **`cdc_monitor_scrape_errors_total`** (by source: `postgres`, `postgres_ingestion`, `clickhouse`, `clickhouse_lag`, `debezium`) and **`cdc_monitor_last_success_timestamp_seconds`** — the monitor's own reliability is itself observable: a stuck or half-failing exporter is distinguishable from "everything is fine, zero drift."
 
 ---
 
@@ -47,7 +49,7 @@ This document details what is actually deployed and scraped in this repository �
 
 ## 3. Alerting
 
-Four alert rules are provisioned as code in `config/grafana/provisioning/alerting/rules.yml` (Grafana's unified alerting, evaluated every 1m):
+Five alert rules are provisioned as code in `config/grafana/provisioning/alerting/rules.yml` (Grafana's unified alerting, evaluated every 1m):
 
 | Alert | Condition | Severity |
 |---|---|---|
@@ -55,6 +57,7 @@ Four alert rules are provisioned as code in `config/grafana/provisioning/alertin
 | `cdc-replication-lag-high` | `cdc_replication_lag_seconds > 120` for 5m | warning |
 | `debezium-connector-down` | `min(debezium_connector_state) < 1` for 2m | critical |
 | `clickhouse-ingestion-stalled` | `rate(ClickHouseProfileEvents_InsertedRows[5m]) ≈ 0` for 5m | warning |
+| `kiva-ingestion-stalled` | `time() - ingestion_last_activity_timestamp_seconds > 1800` for 15m | warning |
 
 ### Email delivery
 
@@ -76,6 +79,6 @@ Alerts route to a real email **contact point** (`config/grafana/provisioning/ale
 To enforce Infrastructure-as-Code (IaC) practices, everything below is created automatically on `docker compose up -d` — no manual dashboard import or datasource click-through:
 
 - **Datasources**: `config/grafana/provisioning/datasources/prometheus.yml` and `clickhouse.yml`, both with explicit, stable `uid`s (`prometheus`, `clickhouse`) so dashboards and alert rules can reference them deterministically regardless of provisioning order.
-- **Dashboards**: `config/grafana/dashboards/inkomoko_pipeline_observability.json` (11 panels: Redpanda throughput, ClickHouse memory/queries/ingestion rate, Postgres-vs-ClickHouse row reconciliation, CDC lag, Debezium connector state, Postgres exporter status) and `inkomoko_executive_analytics.json` (business KPIs from the marts).
+- **Dashboards**: `config/grafana/dashboards/inkomoko_pipeline_observability.json` (14 panels: Redpanda throughput, ClickHouse memory/queries/ingestion rate, Postgres-vs-ClickHouse row reconciliation, CDC lag, Debezium connector state, Postgres exporter status, Kiva ingestion activity) and `inkomoko_executive_analytics.json` (business KPIs from the marts).
 - **Alert rules**: `config/grafana/provisioning/alerting/rules.yml`, described above.
 - **Contact point & notification policy**: `config/grafana/provisioning/alerting/contact-points.yml` and `notification-policies.yml` — route firing alerts to email via the `mailpit` SMTP relay described above.

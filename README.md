@@ -10,9 +10,9 @@ The architecture simulates a modern, resilient, and highly scalable data stack c
 2. **Change Data Capture (CDC):** **Debezium** tracking logical replication slots in Postgres, auto-registered at startup by a `connector-registrar` init container.
 3. **Event Stream:** **Redpanda** (A lightweight, C++ Kafka alternative requiring zero JVM overhead).
 4. **Data Warehouse (OLAP):** **ClickHouse**, utilizing native Kafka-engine ingestion to sink messages instantly without a dedicated connector service.
-5. **Transformation & Data Quality:** **dbt (Data Build Tool)** executing SQL transformations and data quality tests directly inside ClickHouse, docs served live via **dbt-docs**.
-6. **Orchestration:** **Dagster** orchestrating the entire lineage from API fetch -> CDC Buffer -> dbt Run -> dbt Test.
-7. **Observability:** **Prometheus & Grafana**, scraping Redpanda, ClickHouse, Postgres (`postgres-exporter`), and a custom **`cdc-monitor`** exporter that reconciles Postgres/ClickHouse row counts and measures real CDC replication lag - plus 4 provisioned Grafana alert rules.
+5. **Transformation & Data Quality:** **dbt (Data Build Tool)** executing SQL transformations and data quality tests directly inside ClickHouse, with its documentation site served live from the dbt service.
+6. **Orchestration:** **Apache Airflow** orchestrating the entire lineage from API fetch -> CDC Buffer -> dbt Run -> dbt Test.
+7. **Observability:** **Prometheus & Grafana**, scraping Redpanda, ClickHouse, Postgres (`postgres-exporter`), and a custom **`cdc-monitor`** exporter that reconciles Postgres/ClickHouse row counts and measures real CDC replication lag - plus 5 provisioned Grafana alert rules.
 
 ### Architecture Flow
 ![Inkomoko Data Platform Architecture](./architecture.png)
@@ -26,14 +26,14 @@ The diagram above shows the core data path. See [`docs/design-report.md`](./docs
 * **Redpanda over Kafka:** Kafka requires Zookeeper (or KRaft) and a massive JVM memory footprint. Redpanda is a C++ Kafka-compatible binary that runs in a fraction of the memory, avoiding local machine crashes during testing.
 * **ClickHouse over Postgres for Analytics:** Postgres is excellent for OLTP, but ClickHouse is a columnar analytical engine capable of processing billions of rows per second. By separating OLTP and OLAP, the architecture guarantees production stability.
 * **ClickHouse `FINAL` modifier for CDC:** Instead of complex SQL deduplication logic, the dbt staging model leverages ClickHouse's `ReplacingMergeTree` and `FINAL` modifier to instantly collapse CDC event history into the absolute latest state.
-* **Dagster over Airflow (For Local Assessment):** Airflow relies on a webserver, scheduler, and worker (often requiring multiple gigabytes of RAM). I moved to Dagster solely to run this project efficiently on limited local hardware. However, for an enterprise-grade orchestrator in a production environment, I would definitely go with **Apache Airflow**.
+* **Ultra-Lightweight Apache Airflow:** Rather than running a heavy multi-container Celery/Redis cluster, Airflow is configured in a resource-conscious single container (`SequentialExecutor` with throttled scheduler parsing and 1 gunicorn worker) capped at just 768MB RAM. This delivers the industry-standard orchestrator without hardware strain.
 * **Docker Compose Healthchecks & Network Isolation:** Every container implements strict health checks and startup sequencing, mitigating race conditions during localized deployment.
 * **Auto-Registered CDC Connector:** The Debezium connector config is a template rendered from `.env` credentials and POSTed automatically by a one-shot `connector-registrar` container that waits on Debezium's healthcheck. This is what makes `docker compose up -d` alone sufficient - no manual `curl` step.
 * **Reconciliation over inference:** Rather than assuming CDC "just works" because Redpanda/ClickHouse report healthy, `cdc-monitor` (`src/cdc_monitor.py`) directly compares Postgres and ClickHouse row counts and measures freshness lag using Postgres's own `updated_at` timestamp carried through the pipeline - a stalled or lossy connector is caught even when every infrastructure metric looks fine.
 
 ## Future Scalability
 If deploying this to an Enterprise Cloud environment (e.g., GCP or AWS) at massive scale, the architecture would evolve to ensure maximum resilience and throughput:
-1. **Enterprise Orchestration with Airflow:** While Dagster was used locally to bypass hardware constraints, I would absolutely migrate to **Apache Airflow** for the enterprise-grade orchestrator. Its distributed executors and massive community ecosystem make it the undisputed choice for scaling production pipelines.
+1. **Distributed Airflow on Kubernetes:** The lightweight standalone Airflow instance would scale to `KubernetesExecutor` with dynamic worker pods, dedicated task queues, and team-isolated namespaces.
 2. **Replacing Redpanda with Apache Kafka:** Redpanda was utilized for this local assessment to bypass JVM constraints, but considering the overload and stability requirements of a true production environment, I will use **Apache Kafka** in place of Redpanda. Kafka remains the battle-tested, enterprise standard for streaming data at immense scale.
 3. **dbt Fusion (Rust Engine):** Upgrading the transformation layer from the legacy Python-based `dbt-core` to the new Rust-based **dbt Fusion** execution engine. This would massively reduce DAG compilation times and memory overhead for projects with thousands of models.
 
@@ -73,7 +73,7 @@ The pipeline ingests real-time transactional loan records with the following sch
 The platform includes a production-grade `Makefile` that handles environment configuration, container dispatch, endpoint discovery, and validation with simple shortcuts:
 
 ```bash
-make up       # 1. Auto-initializes .env, boots all 16 containers, & prints all URLs
+make up       # 1. Auto-initializes .env, boots all 15 services, & prints all URLs
 make urls     # 2. Displays the complete reviewer dashboard with URLs and credentials
 make verify   # 3. Automatically validates all 6 stages of the data pipeline end-to-end
 make ps       # 4. Lists all active & inactive containers with healthcheck statuses
@@ -85,7 +85,7 @@ make help     # 5. Interactive menu with all lifecycle, database, and debugging 
 cp .env.example .env   # optional: only needed if you want to override defaults
 docker compose up -d
 ```
-This starts **everything**: Postgres, Redpanda, Debezium, the `connector-registrar`, ClickHouse, `dbt-docs`, Dagster, `cdc-monitor`, `postgres-exporter`, Prometheus, Grafana, Redpanda Console, and the Debezium UI.
+This starts **everything**: Postgres, Redpanda, Debezium, the `connector-registrar`, ClickHouse, `dbt` (transforms + docs server), Airflow, `cdc-monitor`, `postgres-exporter`, Prometheus, Grafana, Redpanda Console, and the Debezium UI.
 
 Give it 30–60 seconds on first boot for image pulls and healthchecks. Confirm everything is up:
 ```bash
@@ -106,22 +106,26 @@ The platform provides dedicated `make` targets to inspect, stop, and wipe contai
 | **List Active Only** | `make ps-active` | `docker compose ps` | Filters and displays **only currently running** containers. |
 | **Stop Active Containers** | `make stop` | `docker compose stop` | Gracefully **stops active containers** without removing them (preserves container states and network definitions). |
 | **Stop & Remove Containers** | `make down` | `docker compose down` | Gracefully **stops and removes all containers and internal networks**. |
-| **Clear Containers & Volumes** | `make clear` *(or `make clean`)* | `docker compose down -v --remove-orphans` | Completely tears down containers, networks, **deletes persistent database volumes** (`pg_data`, `redpanda_data`, `ch_data`), and clears local dbt build artifacts. *(Pass `force=true` for non-interactive scripts).* |
+| **Clear Containers & Volumes** | `make clear` *(or `make clean`)* | `docker compose down -v --remove-orphans` | Completely tears down containers, networks, **deletes persistent database volumes** (`pg_data`, `redpanda_data`, `ch_data`, `airflow_data`), and clears local dbt build artifacts. *(Pass `force=true` for non-interactive scripts).* |
 | **Full Clean Reset** | `make reset` | `make clean && make up` | Wipes volumes/containers to a clean slate, then boots and re-initializes the entire stack fresh. |
 
-### 2. Run the Orchestration Pipeline (Dagster)
-Open your browser and navigate to **[http://localhost:3000](http://localhost:3000)**.
-1. Click on **Assets** in the top navigation bar.
-2. Click **Materialize All** to run the full pipeline.
+### 2. Run the Orchestration Pipeline (Apache Airflow)
+Open your browser and navigate to **[http://localhost:8088](http://localhost:8088)** *(Credentials are configured via `.env` — `AIRFLOW_WEB_USER` / `AIRFLOW_WEB_PASSWORD`)*.
+1. Locate the DAG named **`inkomoko_kiva_pipeline`**.
+2. Unpause the DAG (toggle to ON) or click the **Trigger DAG** (▶) button to execute the full pipeline immediately.
+*(Alternatively, trigger it directly from the terminal via `make airflow-run`).*
 
 **What happens under the hood?**
-1. Dagster executes the Python script to fetch real Kiva Loan data and upserts it into Postgres.
+1. Airflow executes the Python script to fetch real Kiva Loan data and upserts it into Postgres.
 2. Debezium captures the inserts/updates and streams them as JSON into Redpanda.
 3. ClickHouse consumes the Redpanda stream instantly into `raw_data.kiva_loans_raw`.
-4. Dagster runs `dbt run` to materialize the models in ClickHouse.
-5. Dagster runs `dbt test` to enforce data quality constraints (Unique IDs, Non-Null values, Accepted Statuses).
+4. Airflow runs `dbt run` to materialize the models in ClickHouse.
+5. Airflow runs `dbt test` to enforce data quality constraints (Unique IDs, Non-Null values, Accepted Statuses).
+6. Airflow runs `dbt source freshness` to enforce the staging-source freshness thresholds (`warn_after 15m` / `error_after 30m` in `dbt_project/models/staging/src_kiva.yml`).
 
-It also runs unattended every 15 minutes (`*/15 * * * *`, defined in `dagster_orchestration/definitions.py`) once the Dagster container is up - frequent enough to keep the Kiva loan data close to real-time without hammering a free public API or forcing needlessly frequent full-refresh dbt rebuilds. The CDC path itself (Postgres → Debezium → Redpanda → ClickHouse) is already near-real-time independent of this schedule; the 15-minute cadence only controls how often we poll Kiva for new external data.
+It also runs unattended every 15 minutes (`*/15 * * * *`, defined in `airflow_dags/inkomoko_kiva_pipeline.py`) once the Airflow container is up - frequent enough to keep the Kiva loan data close to real-time without hammering a free public API or forcing needlessly frequent full-refresh dbt rebuilds. The CDC path itself (Postgres → Debezium → Redpanda → ClickHouse) is already near-real-time independent of this schedule; the 15-minute cadence only controls how often we poll Kiva for new external data.
+
+The per-run backfill depth is tunable via `.env` (wired end-to-end into the Airflow container and the ingest task): `KIVA_PAGES` (how many pages to pull) and `KIVA_PER_PAGE` (records per page) - defaulting to 3 × 100 = 300 loans per run.
 
 ---
 
@@ -131,7 +135,7 @@ Check each stage independently, in order:
 
 **1. Ingestion landed in Postgres:**
 ```bash
-docker exec -it inkomoko_postgres psql -U inkomoko_admin -d inkomoko_oltp \
+docker exec -it inkomoko_postgres psql -U ${POSTGRES_USER} -d ${POSTGRES_DB} \
   -c "SELECT COUNT(*), MAX(updated_at) FROM raw_data.kiva_loans;"
 ```
 
@@ -160,13 +164,13 @@ docker exec -it inkomoko_clickhouse clickhouse-client \
 docker exec -it inkomoko_clickhouse clickhouse-client \
   --query "SELECT COUNT(*) FROM analytics.mart_loan_features_ml"
 ```
-Or browse the generated docs/lineage graph at **dbt-docs**: [http://localhost:8085](http://localhost:8085).
+Or browse the generated docs/lineage graph at **dbt-docs** (served by the `dbt` service): [http://localhost:8081](http://localhost:8081).
 
 **6. End-to-end CDC integrity (no dropped/stale rows):**
 ```bash
-curl -s http://localhost:9200/metrics | grep -E "cdc_row_count_drift|cdc_replication_lag_seconds"
+curl -s http://localhost:9200/metrics | grep -E "cdc_row_count_drift|cdc_replication_lag_seconds|ingestion_last_activity"
 ```
-`cdc_row_count_drift` should trend toward `0` and `cdc_replication_lag_seconds` should stay low (single-digit to low-double-digit seconds) once the pipeline is idle. Both are also plotted live on the **Inkomoko Pipeline Observability** Grafana dashboard.
+`cdc_row_count_drift` should trend toward `0`, `cdc_replication_lag_seconds` should stay low (single-digit to low-double-digit seconds) once the pipeline is idle, and `ingestion_last_activity_timestamp_seconds` should track the most recent Kiva ingestion run. All three are also plotted/live on the **Inkomoko Pipeline Observability** Grafana dashboard (ingestion activity powers the `kiva-ingestion-stalled` alert).
 
 ---
 
@@ -174,7 +178,7 @@ curl -s http://localhost:9200/metrics | grep -E "cdc_row_count_drift|cdc_replica
 * **Grafana Dashboards:** http://localhost:3001 (`admin` / `inkomoko`)
   - **Inkomoko Pipeline Observability:** operational metrics - Redpanda throughput, ClickHouse memory/queries/write ops, Postgres-vs-ClickHouse row reconciliation, CDC replication lag, Debezium connector state, Postgres exporter status.
   - **Inkomoko Executive Loan Analytics:** business intelligence & ML feature distributions querying the ClickHouse marts directly.
-* **Grafana Alerting:** http://localhost:3001/alerting/list - 4 provisioned rules (CDC row drift, CDC replication lag, Debezium connector down, ClickHouse ingestion stalled), routed by a provisioned notification policy to a real email contact point. See [`docs/observability.md`](./docs/observability.md) for the full design and rationale.
+* **Grafana Alerting:** http://localhost:3001/alerting/list - 5 provisioned rules (CDC row drift, CDC replication lag, Debezium connector down, ClickHouse ingestion stalled, Kiva ingestion stalled), routed by a provisioned notification policy to a real email contact point. See [`docs/observability.md`](./docs/observability.md) for the full design and rationale.
 * **Alert emails:** captured by **Mailpit** at http://localhost:8025 (a local SMTP catcher - no real credentials needed to see alerting work end-to-end). To manually trigger one: `docker stop inkomoko_debezium`, wait ~2-3 minutes for the `debezium-connector-down` rule to fire, check the email at localhost:8025, then `docker start inkomoko_debezium` to resolve it. See [`docs/observability.md`](./docs/observability.md#3-alerting) for the full walkthrough, including how to point this at a real mailbox instead.
 * **Prometheus Targets:** http://localhost:9090/targets - `redpanda`, `clickhouse`, `postgres-exporter`, `cdc-monitor`.
 
@@ -185,5 +189,5 @@ curl -s http://localhost:9200/metrics | grep -E "cdc_row_count_drift|cdc_replica
 Defined in [`.github/workflows/ci.yml`](./.github/workflows/ci.yml), triggered on every push/PR to `main`/`master`. Three staged jobs - each gated on the previous one passing, so cheap/fast feedback happens before the expensive full-stack test runs:
 
 1. **Lint & Unit Test** - `flake8` (fails the build on syntax errors/undefined names; warns on style) + `pytest tests/` (ingestion logic and CDC-monitor drift/lag/connector-health calculations, all mocked - no live services required).
-2. **Docker Compose & dbt Validation** - `docker compose config` (catches YAML/interpolation errors) + `dbt parse` (catches dbt syntax/ref errors) as a fast smoke test.
-3. **End-to-End CDC + dbt Integration Test** - actually stands up Postgres, Redpanda, Debezium, ClickHouse, `cdc-monitor`, and `postgres-exporter`; auto-registers the Debezium connector; runs the real ingestion script against the live stack; polls ClickHouse until CDC-replicated rows are observed; runs `dbt run` and `dbt test` against the live warehouse; and checks that `cdc-monitor`'s `/metrics` endpoint is reporting real values. This is what catches a connector config or model that's syntactically valid but functionally broken - the previous version of this pipeline only ran `dbt parse`, which cannot catch that class of bug.
+2. **Docker Compose & dbt Validation** - `docker compose config` (catches YAML/interpolation errors) + `dbt parse` (catches dbt syntax/ref errors) as a fast smoke test, plus an **Airflow DAG import check** that loads every DAG through `DagBag` inside the official Airflow image so a broken task definition is caught in CI rather than on the first schedule tick.
+3. **End-to-End CDC + dbt Integration Test** - actually stands up Postgres, Redpanda, Debezium, ClickHouse, `cdc-monitor`, and `postgres-exporter`; auto-registers the Debezium connector; runs the real ingestion script against the live stack; polls ClickHouse until CDC-replicated rows are observed; runs `dbt run`, `dbt test`, and `dbt source freshness` against the live warehouse; and checks that `cdc-monitor`'s `/metrics` endpoint is reporting real values. This is what catches a connector config or model that's syntactically valid but functionally broken - the previous version of this pipeline only ran `dbt parse`, which cannot catch that class of bug.

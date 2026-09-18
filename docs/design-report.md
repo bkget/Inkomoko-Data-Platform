@@ -7,8 +7,11 @@ meant to be read alongside [`README.md`](../README.md) (how to run it) and
 
 ## 1. Architecture
 
-`architecture.png` (repo root) shows the core data path. The diagram below is
-the current full stack, including the reliability/observability components:
+![Inkomoko Data Platform Architecture](../architecture.png)
+
+The diagram above illustrates the complete end-to-end data platform architecture, capturing data sourcing, OLTP ingestion, logical CDC replication, Redpanda event streaming, ClickHouse OLAP with dbt modeling, Apache Airflow orchestration, and full-stack Prometheus & Grafana observability.
+
+Below is the complementary component-level service topology:
 
 ```mermaid
 flowchart LR
@@ -44,7 +47,7 @@ flowchart LR
     end
 
     subgraph Orchestration
-        DAG[Dagster: ingest asset -> dbt run -> dbt test]
+        DAG[Airflow: ingest task -> dbt run -> dbt test]
     end
 
     subgraph Observability
@@ -95,9 +98,9 @@ flowchart LR
 4. **Transform** - dbt reads `kiva_loans_raw FINAL` (staging), applies business
    logic (intermediate), and produces two marts: an aggregated BI mart and an
    ML feature-engineering mart.
-5. **Orchestrate** - a Dagster asset graph chains ingestion → (buffer for CDC
+5. **Orchestrate** - an Apache Airflow DAG chains ingestion → (buffer for CDC
    propagation) → `dbt run` → `dbt test`, scheduled every 15 minutes and
-   runnable on demand from the Dagster UI. The 15-minute cadence governs only
+   runnable on demand from the Airflow UI. The 15-minute cadence governs only
    how often we poll Kiva for new external data; the CDC path itself
    (Postgres → Debezium → Redpanda → ClickHouse) is already near-real-time
    independent of this schedule.
@@ -211,7 +214,7 @@ this" answer the assessment asks for, made concrete instead of abstract.
 | **Current (~10²–10³ rows/day)** | Nothing - this is the tier the current build is tuned for. | - |
 | **10⁴–10⁶ rows/day** (single growing source) | `dbt run` full-refresh table materializations for the marts get slower; `ReplacingMergeTree` merge overhead grows. | Switch marts to **incremental** dbt models (`is_incremental()` + `unique_key`); rely on the `toYYYYMM(posted_date)` partitioning already in place to scope merges/backfills to affected months only; add ClickHouse `TTL` on `kiva_loans_raw` to age out obsolete CDC versions. |
 | **10⁶–10⁸ rows/day / multiple OLTP sources** | Single Redpanda broker and single-node ClickHouse become the bottleneck; Debezium `tasks.max: 1` can't keep up with WAL volume. | Move to **Apache Kafka** with multiple partitions per topic (Redpanda was chosen here purely to avoid the JVM footprint on a laptop - see `README.md` → Design Decisions); scale Debezium connector tasks per table; move to a **ClickHouse cluster** (sharded + replicated) with `Distributed` engine tables; introduce a schema registry (Avro/Protobuf) instead of raw JSON to catch upstream schema drift before it reaches ClickHouse. |
-| **Enterprise / multi-team** | A single Dagster `dagster dev` process and a single `dbt` project become an operational and ownership bottleneck. | Migrate orchestration to **Apache Airflow** with dedicated executors (already the stated production target - see `README.md`); split the dbt project by domain with `dbt mesh`/multi-project `dbt-core` patterns; adopt **dbt Fusion** (Rust engine) for compile-time performance on a much larger DAG; add a proper data catalog / lineage tool (e.g. OpenLineage) since `cdc-monitor`'s reconciliation approach stops being sufficient once there are many source tables instead of one. |
+| **Enterprise / multi-team** | A single standalone Airflow instance and a single `dbt` project become an operational and ownership bottleneck. | Scale orchestration to distributed **Apache Airflow** on Kubernetes (`KubernetesExecutor` / `CeleryExecutor`) with isolated worker pools and dedicated team queues; split the dbt project by domain with `dbt mesh`/multi-project `dbt-core` patterns; adopt **dbt Fusion** (Rust engine) for compile-time performance on a much larger DAG; add a proper data catalog / lineage tool (e.g. OpenLineage) since `cdc-monitor`'s reconciliation approach stops being sufficient once there are many source tables instead of one. |
 
 ## 6. Beyond the Brief
 
@@ -249,9 +252,7 @@ rather than just a working demo:
    panel in that dashboard ("datasource not found"). Both datasources now
    have explicit, stable `uid`s (`prometheus`, `clickhouse`) referenced
    consistently across all provisioned dashboards and alert rules.
-6. **Browsable dbt documentation.** `dbt-docs` is served on
-   `http://localhost:8085`, giving reviewers an interactive lineage graph and
-   column-level catalog instead of only static markdown.
+6. **Browsable dbt documentation.** The `dbt` service generates and serves the documentation site on `http://localhost:8081`, giving reviewers an interactive lineage graph and column-level catalog instead of only static markdown. Regenerating docs after a `dbt run` (`make dbt-run` / `make dbt-docs`) refreshes the served site with no restart.
 7. **Grafana OOM fixed at the root cause, not papered over -- including a
    regression caught and fixed in the same investigation.** After adding
    unified alerting, Grafana started getting silently killed by Docker

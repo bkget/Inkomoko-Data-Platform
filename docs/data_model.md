@@ -19,7 +19,7 @@ PostgreSQL (OLTP) ➔ Debezium CDC ➔ Redpanda (Kafka) ➔ ClickHouse MV ➔ St
 
 ### Layer 2: Staging Layer (`analytics.stg_kiva_loans`)
 - Materialized as a dbt view.
-- Cleans data types, standardizes column names, applies deduplication logic via `argMax()`, and filters out soft-deleted records (`is_deleted = 0`).
+- Cleans data types, standardizes column names, applies deduplication via ClickHouse's `FINAL` modifier (leveraging `ReplacingMergeTree` in the raw table), and filters out soft-deleted records (`is_deleted = 0`).
 
 ### Layer 3: Intermediate Layer (`analytics.int_loans_enriched`)
 - Materialized as a dbt view.
