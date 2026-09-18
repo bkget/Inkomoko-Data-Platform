@@ -8,9 +8,9 @@ services:
     image: postgres:16-alpine
     container_name: inkomoko_postgres
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-inkomoko_admin}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-inkomoko_password}
-      POSTGRES_DB: ${POSTGRES_DB:-inkomoko_oltp}
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER must be set in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB must be set in .env}
     ports:
       - "${POSTGRES_PORT:-5433}:5432"
     # Command ensures logical replication is enabled for Debezium CDC
@@ -19,7 +19,7 @@ services:
       - pg_data:/var/lib/postgresql/data
       - ./config/init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-inkomoko_admin} -d ${POSTGRES_DB:-inkomoko_oltp}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:?POSTGRES_USER must be set in .env} -d ${POSTGRES_DB:?POSTGRES_DB must be set in .env}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -33,7 +33,7 @@ services:
     image: quay.io/prometheuscommunity/postgres-exporter:v0.15.0
     container_name: inkomoko_postgres_exporter
     environment:
-      DATA_SOURCE_NAME: "postgresql://${POSTGRES_USER:-inkomoko_admin}:${POSTGRES_PASSWORD:-inkomoko_password}@postgres:5432/${POSTGRES_DB:-inkomoko_oltp}?sslmode=disable"
+      DATA_SOURCE_NAME: "postgresql://${POSTGRES_USER:?POSTGRES_USER must be set in .env}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}@postgres:5432/${POSTGRES_DB:?POSTGRES_DB must be set in .env}?sslmode=disable"
     ports:
       - "9187:9187"
     depends_on:
@@ -136,10 +136,10 @@ services:
     container_name: inkomoko_connector_registrar
     environment:
       DEBEZIUM_URL: http://debezium:8083
-      DEBEZIUM_CONNECTOR_NAME: inkomoko-postgres-connector
-      POSTGRES_USER: ${POSTGRES_USER:-inkomoko_admin}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-inkomoko_password}
-      POSTGRES_DB: ${POSTGRES_DB:-inkomoko_oltp}
+      DEBEZIUM_CONNECTOR_NAME: ${DEBEZIUM_CONNECTOR_NAME:?DEBEZIUM_CONNECTOR_NAME must be set in .env}
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER must be set in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB must be set in .env}
     volumes:
       - ./config/debezium_postgres_source.json.template:/config/debezium_postgres_source.json.template:ro
       - ./scripts/register_connector.sh:/register_connector.sh:ro
@@ -166,8 +166,8 @@ services:
       - "9000:9000" # Native TCP port
       - "9363:9363" # Prometheus metrics port
     environment:
-      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-inkomoko_admin}
-      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-inkomoko_password}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:?CLICKHOUSE_USER must be set in .env}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?CLICKHOUSE_PASSWORD must be set in .env}
       CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
     volumes:
       - ch_data:/var/lib/clickhouse
@@ -190,32 +190,63 @@ services:
   # TIER 4: TRANSFORMATION, DATA MODELING & ORCHESTRATION
   # ======================================================
 
-  # --- dagster: Data orchestrator scheduling API ingestion and dbt model materializations ---
-  dagster:
-    image: python:3.11-slim
-    container_name: inkomoko_dagster
+  # --- airflow: Ultra-lightweight standalone Airflow (Webserver + Scheduler) ---
+  airflow:
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
+    image: inkomoko-airflow:2.9.3
+    container_name: inkomoko_airflow
     environment:
-      # Shared instance home so the immediate startup run below, the schedule
-      # start-up below, and the dagster dev daemon/webserver all see the same
-      # run/schedule state (container-local only, nothing written to the host).
-      DAGSTER_HOME: /tmp/dagster_home
-    # NOTE: `pip install && mkdir` must be fully finished (blocking) before the
-    # trailing `&` background launch, so it's terminated with `;`, not `&&` --
-    # `&&` immediately followed by a later `&` backgrounds the *whole* preceding
-    # chain (pip install included), letting `dagster dev` race ahead of the
-    # install and fail with "dagster: not found". The `;` starts a fresh
-    # statement so only the parenthesized subshell gets backgrounded.
+      AIRFLOW__CORE__EXECUTOR: SequentialExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: sqlite:////opt/airflow/airflow.db
+      AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+      AIRFLOW__CORE__LOAD_DEFAULT_CONNECTIONS: 'false'
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'false'
+      AIRFLOW__CORE__DONOT_PICKLE: 'true'
+      AIRFLOW__WEBSERVER__WORKERS: 1
+      AIRFLOW__SCHEDULER__PARSING_PROCESSES: 1
+      AIRFLOW__SCHEDULER__MIN_FILE_PROCESS_INTERVAL: 60
+      AIRFLOW__SCHEDULER__DAG_DIR_LIST_INTERVAL: 60
+      AIRFLOW__CORE__MAX_ACTIVE_TASKS_PER_DAG: 2
+      AIRFLOW__CORE__MAX_ACTIVE_RUNS_PER_DAG: 1
+      AIRFLOW__WEBSERVER__EXPOSE_CONFIG: 'false'
+      AIRFLOW__WEBSERVER__WEB_SERVER_MASTER_TIMEOUT: 300
+      AIRFLOW__WEBSERVER__WEB_SERVER_WORKER_TIMEOUT: 300
+      PATH: "/home/airflow/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER must be set in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB must be set in .env}
+      CLICKHOUSE_HOST: clickhouse
+      CLICKHOUSE_PORT: "8123"
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:?CLICKHOUSE_USER must be set in .env}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?CLICKHOUSE_PASSWORD must be set in .env}
+      # Airflow webserver account - injected from .env, never hardcoded.
+      AIRFLOW_WEB_USER: ${AIRFLOW_WEB_USER:?AIRFLOW_WEB_USER must be set in .env}
+      AIRFLOW_WEB_PASSWORD: ${AIRFLOW_WEB_PASSWORD:?AIRFLOW_WEB_PASSWORD must be set in .env}
+      AIRFLOW_WEB_EMAIL: ${AIRFLOW_WEB_EMAIL:?AIRFLOW_WEB_EMAIL must be set in .env}
+      # Kiva API backfill depth, wired through so .env tuning actually reaches
+      # the ingest task (src/ingest_api.py reads these directly).
+      KIVA_PAGES: ${KIVA_PAGES:-3}
+      KIVA_PER_PAGE: ${KIVA_PER_PAGE:-100}
     command: >
-      sh -c "pip install -r src/requirements.txt && mkdir -p $$DAGSTER_HOME;
-      (sleep 5;
-      dagster job execute -f dagster_orchestration/definitions.py -j end_to_end_pipeline || true;
-      dagster schedule start end_to_end_pipeline_schedule -f dagster_orchestration/definitions.py || true) &
-      dagster dev -h 0.0.0.0 -p 3000 -f dagster_orchestration/definitions.py"
+      bash -c "airflow db migrate &&
+      airflow users create --username $$AIRFLOW_WEB_USER --password $$AIRFLOW_WEB_PASSWORD --firstname Inkomoko --lastname Admin --role Admin --email $$AIRFLOW_WEB_EMAIL || true;
+      (i=0; until airflow dags list | grep -q inkomoko_kiva_pipeline; do sleep 5; i=$$((i+5)); [ $$i -ge 120 ] && break; done;
+      airflow dags trigger inkomoko_kiva_pipeline || true) &
+      (while true; do airflow webserver --port 8080; sleep 2; done) &
+      exec airflow scheduler"
     ports:
-      - "3000:3000"
+      - "8088:8080" # Exposed on port 8088 to avoid conflict with Redpanda Console on 8080
     volumes:
-      - .:/opt/dagster/app
-    working_dir: /opt/dagster/app
+      # named volume preserves the SQLite metadata DB + task logs across
+      # container recreation (`make clear` still wipes it via down -v).
+      - airflow_data:/opt/airflow
+      - ./airflow_dags:/opt/airflow/dags
+      - ./src:/opt/airflow/src:ro
+      - ./dbt_project:/opt/airflow/dbt_project
     depends_on:
       postgres:
         condition: service_healthy
@@ -223,54 +254,44 @@ services:
         condition: service_healthy
       connector-registrar:
         condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 45s
     deploy:
       resources:
         limits:
-          # Raised from 512M: dagster dev (webserver + daemon) + multiprocess
-          # executor workers + pip install all run concurrently and easily
-          # exceed 512M, causing OOM kills (container exits with OOMKilled=true).
-          memory: 1500M
+          # Ultra-lightweight footprint: 1 web worker + 1 scheduler process + SQLite
+          # fits comfortably in 1024M for standalone operation with concurrent dbt tasks.
+          memory: 1024M
 
   # --- dbt: Transformation environment running dbt-clickhouse models and tests ---
+  # deps are baked into the image (Dockerfile.dbt); the project itself is bind-mounted.
+  # The container also generates and serves the interactive dbt documentation site
+  # (DAG lineage graph + column catalog) on :8081. `dbt run`/`dbt test` are invoked
+  # via `docker exec` (independent of the foreground process), and the static server
+  # reads live from ./dbt_project/target, so regenerating docs after a run refreshes
+  # the served site with no restart or separate container.
   dbt:
-    image: python:3.11-slim
+    image: inkomoko-dbt:1.0
+    build:
+      context: .
+      dockerfile: Dockerfile.dbt
     container_name: inkomoko_dbt
-    # Install dbt-clickhouse on boot (Python 3.11 avoids the mashumaro bug entirely)
-    # NOTE: the version specifier is quoted below -- unquoted, `>` is parsed by
-    # sh as output redirection, silently writing pip's stdout to a file
-    # literally named `=1.7.0` in the bind-mounted /usr/app (dbt_project/).
-    command: ["sh", "-c", "pip install 'dbt-clickhouse~=1.8.0' mashumaro==3.13.1 && sleep infinity"]
+    command: >
+      sh -c "dbt docs generate || echo 'dbt docs generate failed, serving last known state';
+      exec python -m http.server 8081 --directory /usr/app/target"
     volumes:
       - ./dbt_project:/usr/app
       - ./dbt_project/profiles.yml:/root/.dbt/profiles.yml
+    environment:
+      - CLICKHOUSE_USER=${CLICKHOUSE_USER:?CLICKHOUSE_USER must be set in .env}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:?CLICKHOUSE_PASSWORD must be set in .env}
     ports:
       - "8081:8081"
     working_dir: /usr/app
-    depends_on:
-      clickhouse:
-        condition: service_healthy
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-
-  # --- dbt-docs: Static documentation server rendering the interactive dbt DAG lineage graph ---
-  # Generates and serves the dbt-native documentation site (DAG lineage graph,
-  # column-level descriptions, test coverage) so reviewers can browse the data
-  # model interactively instead of only reading static schema docs.
-  dbt-docs:
-    image: python:3.11-slim
-    container_name: inkomoko_dbt_docs
-    # Version specifier quoted -- see note on the `dbt` service above.
-    command: >
-      sh -c "pip install --no-cache-dir 'dbt-clickhouse~=1.8.0' mashumaro==3.13.1 &&
-      (dbt docs generate --project-dir /usr/app --profiles-dir /usr/app || echo 'dbt docs generate failed, serving last known state') &&
-      python -m http.server 8085 --directory /usr/app/target"
-    volumes:
-      - ./dbt_project:/usr/app
-    working_dir: /usr/app
-    ports:
-      - "8085:8085"
     depends_on:
       clickhouse:
         condition: service_healthy
@@ -287,27 +308,28 @@ services:
   # Custom exporter that continuously cross-checks Postgres vs ClickHouse row
   # counts and measures end-to-end CDC freshness lag, exposing both (plus
   # Debezium connector task health) as Prometheus metrics on :9200/metrics.
+  # Runtime deps are baked into the image; live code is bind-mounted for hot reloads.
   cdc-monitor:
-    image: python:3.11-slim
+    image: inkomoko-cdc-monitor:1.0
+    build:
+      context: .
+      dockerfile: Dockerfile.cdc-monitor
     container_name: inkomoko_cdc_monitor
-    command: >
-      sh -c "pip install --no-cache-dir -r requirements-cdc-monitor.txt &&
-      python cdc_monitor.py"
     working_dir: /app
     volumes:
       - ./src:/app
     environment:
       DB_HOST: postgres
       DB_PORT: 5432
-      DB_USER: ${POSTGRES_USER:-inkomoko_admin}
-      DB_PASS: ${POSTGRES_PASSWORD:-inkomoko_password}
-      DB_NAME: ${POSTGRES_DB:-inkomoko_oltp}
+      DB_USER: ${POSTGRES_USER:?POSTGRES_USER must be set in .env}
+      DB_PASS: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      DB_NAME: ${POSTGRES_DB:?POSTGRES_DB must be set in .env}
       CLICKHOUSE_HOST: clickhouse
       CLICKHOUSE_PORT: "8123"
-      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-inkomoko_admin}
-      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-inkomoko_password}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:?CLICKHOUSE_USER must be set in .env}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?CLICKHOUSE_PASSWORD must be set in .env}
       DEBEZIUM_URL: http://debezium:8083
-      DEBEZIUM_CONNECTOR_NAME: inkomoko-postgres-connector
+      DEBEZIUM_CONNECTOR_NAME: ${DEBEZIUM_CONNECTOR_NAME:?DEBEZIUM_CONNECTOR_NAME must be set in .env}
       POLL_INTERVAL_SECONDS: "15"
     ports:
       - "9200:9200"
@@ -325,7 +347,7 @@ services:
 
   # --- prometheus: Time-series metrics engine scraping telemetry from all pipeline layers ---
   prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus:v3.13.3
     container_name: inkomoko_prometheus
     volumes:
       - ./config/prometheus.yml:/etc/prometheus/prometheus.yml
@@ -341,7 +363,7 @@ services:
   # For local dev, Mailpit provides that relay by accepting unauthenticated SMTP on `:1025` and exposing captured emails 
   # via `:8025`, so you can validate the full alert-to-email pipeline end-to-end.
   mailpit:
-    image: axllent/mailpit:latest
+    image: axllent/mailpit:v1.31.1
     container_name: inkomoko_mailpit
     ports:
       - "8025:8025" # Web UI: view captured emails
@@ -363,7 +385,7 @@ services:
   # Therefore, we use a separate one-off "installer" container to install vertamedia-clickhouse-datasource directly 
   # with `grafana cli plugins install`into the shared grafana_data volume, bypassing the merge logic entirely.
   grafana-plugin-installer:
-    image: grafana/grafana-oss:latest
+    image: grafana/grafana-oss:13.0.2
     container_name: inkomoko_grafana_plugin_installer
     entrypoint: ["grafana"]
     command: ["cli", "--pluginsDir", "/var/lib/grafana/plugins", "plugins", "install", "vertamedia-clickhouse-datasource"]
@@ -377,13 +399,19 @@ services:
 
   # --- grafana: Unified monitoring dashboard visualizing pipeline health, CDC sync, and alerts ---
   grafana:
-    image: grafana/grafana-oss:latest
+    image: grafana/grafana-oss:13.0.2
     container_name: inkomoko_grafana
     ports:
-      - "3001:3000" # Mapped to 3001 to avoid conflicting with Dagster
+      - "3001:3000" # Host port 3001 mapped to internal Grafana port 3000
     environment:
-      - GF_SECURITY_ADMIN_USER=${GF_SECURITY_ADMIN_USER:-admin}
-      - GF_SECURITY_ADMIN_PASSWORD=${GF_SECURITY_ADMIN_PASSWORD:-inkomoko}
+      - GF_SECURITY_ADMIN_USER=${GF_SECURITY_ADMIN_USER:?GF_SECURITY_ADMIN_USER must be set in .env}
+      - GF_SECURITY_ADMIN_PASSWORD=${GF_SECURITY_ADMIN_PASSWORD:?GF_SECURITY_ADMIN_PASSWORD must be set in .env}
+      # Alert recipient for contact points provisioning
+      - ALERT_RECIPIENT_NAME=${ALERT_RECIPIENT_NAME:?ALERT_RECIPIENT_NAME must be set in .env}
+      - ALERT_RECIPIENT_EMAIL=${ALERT_RECIPIENT_EMAIL:?ALERT_RECIPIENT_EMAIL must be set in .env}
+      # ClickHouse credentials for datasource provisioning interpolation
+      - CLICKHOUSE_USER=${CLICKHOUSE_USER:?CLICKHOUSE_USER must be set in .env}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:?CLICKHOUSE_PASSWORD must be set in .env}
       # The ClickHouse plugin is preinstalled by grafana-plugin-installer above. This disables Grafana's own 
       # default-app-plugin auto-install this project only uses Prometheus + ClickHouse, so those defaults are 
       # pure memory/disk overhead, each running as its own backend subprocess.
@@ -395,9 +423,9 @@ services:
       - GF_ANALYTICS_REPORTING_ENABLED=false
       # SMTP relay for alert notification emails -- see the mailpit service above. No auth needed: Mailpit accepts any local submission.
       - GF_SMTP_ENABLED=true
-      - GF_SMTP_HOST=mailpit:1025
-      - GF_SMTP_FROM_ADDRESS=alerts@inkomoko.local
-      - GF_SMTP_FROM_NAME=Inkomoko Data Platform
+      - GF_SMTP_HOST=${GF_SMTP_HOST:?GF_SMTP_HOST must be set in .env (e.g. mailpit:1025)}
+      - GF_SMTP_FROM_ADDRESS=${GF_SMTP_FROM_ADDRESS:?GF_SMTP_FROM_ADDRESS must be set in .env (e.g. alerts@inkomoko.local)}
+      - GF_SMTP_FROM_NAME=${GF_SMTP_FROM_NAME:?GF_SMTP_FROM_NAME must be set in .env (e.g. Inkomoko Data Platform)}
       - GF_SMTP_SKIP_VERIFY=true
     volumes:
       - grafana_data:/var/lib/grafana
@@ -457,3 +485,4 @@ volumes:
   ch_data:
   redpanda_data:
   grafana_data:
+  airflow_data:

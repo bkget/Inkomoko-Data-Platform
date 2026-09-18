@@ -1,0 +1,12 @@
+FROM apache/airflow:2.9.3-python3.11
+
+# Ensure user local bin is in PATH for all non-login shells and subshells
+USER airflow
+ENV PATH="/home/airflow/.local/bin:${PATH}"
+
+# Pre-install the pinned pipeline requirements (ingestion + dbt-clickhouse adapters)
+# so Airflow boots instantly without runtime PyPI downloads or compilation overhead.
+COPY --chown=airflow:airflow src/requirements.txt /tmp/requirements-ingest.txt
+COPY --chown=airflow:airflow src/requirements-dbt.txt /tmp/requirements-dbt.txt
+RUN pip install --no-cache-dir -r /tmp/requirements-ingest.txt -r /tmp/requirements-dbt.txt \
+    && rm /tmp/requirements-ingest.txt /tmp/requirements-dbt.txt

@@ -32,9 +32,9 @@ jobs:
       - name: Code Quality & Linting Check (flake8)
         run: |
           # Stop the build if there are Python syntax errors or undefined names
-          flake8 src/ dagster_orchestration/ --count --select=E9,F63,F7,F82 --show-source --statistics
-          # Exit-zero treats all errors as warnings.
-          flake8 src/ dagster_orchestration/ --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+          flake8 src/ airflow_dags/ tests/ --count --select=E9,F63,F7,F82 --show-source --statistics
+          # Exit-zero treats all other style errors as warnings.
+          flake8 src/ airflow_dags/ tests/ --count --exit-zero --statistics
 
       - name: Run Unit Tests (pytest)
         run: |
@@ -48,6 +48,17 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
+      - name: Create .env from template and export credentials to job env
+        # docker compose config and dbt parse both fail-fast on missing
+        # credentials (the compose file uses ${VAR:?} and profiles.yml has no
+        # fallbacks), so they get them from the committed .env.example.
+        run: |
+          cp .env.example .env
+          while IFS='=' read -r key value; do
+            case "$key" in \#*|'') continue ;; esac
+            echo "$key=$value" >> "$GITHUB_ENV"
+          done < .env
+
       - name: Validate Docker Compose Configuration Syntax
         run: |
           docker compose config
@@ -59,11 +70,29 @@ jobs:
 
       - name: Install dbt-clickhouse
         run: |
-          pip install "dbt-clickhouse~=1.8.0" mashumaro==3.13.1
+          pip install -r src/requirements-dbt.txt
 
       - name: Validate dbt Syntax & Models
         run: |
           dbt parse --project-dir dbt_project --profiles-dir dbt_project
+
+      - name: Validate Airflow DAGs import cleanly
+        # Imports every DAG through Airflow's DagBag inside the official Airflow
+        # image, so a broken DAG (bad operator signature, typo'd import, ...) is
+        # caught in CI instead of only when the scheduler first picks it up.
+        run: |
+          docker run --rm \
+            -e AIRFLOW__CORE__LOAD_EXAMPLES=false \
+            -v "${{ github.workspace }}/airflow_dags:/opt/dags" \
+            apache/airflow:2.9.3-python3.11 \
+            bash -c "pip install --no-cache-dir -q 'psycopg[binary]==3.3.5' && \
+              python -c \"
+            from airflow.models import DagBag
+            db = DagBag('/opt/dags', include_examples=False)
+            assert not db.import_errors, db.import_errors
+            assert 'inkomoko_kiva_pipeline' in db.dags, list(db.dags)
+            print('DAG import OK:', list(db.dags))
+            \""
 
   integration-test:
     name: 🔄 End-to-End CDC + dbt Integration Test
@@ -77,6 +106,13 @@ jobs:
 
       - name: Create .env from template
         run: cp .env.example .env
+
+      - name: Export credentials from .env to job env
+        run: |
+          while IFS='=' read -r key value; do
+            case "$key" in \#*|'') continue ;; esac
+            echo "$key=$value" >> "$GITHUB_ENV"
+          done < .env
 
       - name: Start Postgres, Redpanda, Debezium, ClickHouse & observability sidecars
         run: |
@@ -96,11 +132,11 @@ jobs:
         env:
           DB_HOST: localhost
           DB_PORT: "5433"
-          DB_USER: inkomoko_admin
-          DB_PASS: inkomoko_password
-          DB_NAME: inkomoko_oltp
+          DB_USER: ${{ env.POSTGRES_USER }}
+          DB_PASS: ${{ env.POSTGRES_PASSWORD }}
+          DB_NAME: ${{ env.POSTGRES_DB }}
         run: |
-          pip install requests psycopg[binary]
+          pip install -r src/requirements.txt
           python src/ingest_api.py
 
       - name: Wait for CDC events to replicate into ClickHouse
@@ -108,7 +144,7 @@ jobs:
           set +e
           SUCCESS=0
           for i in $(seq 1 20); do
-            COUNT=$(curl -s -u inkomoko_admin:inkomoko_password \
+            COUNT=$(curl -s -u "${{ env.CLICKHOUSE_USER }}:${{ env.CLICKHOUSE_PASSWORD }}" \
               "http://localhost:8123/?query=SELECT%20count()%20FROM%20raw_data.kiva_loans_raw" | tr -d '[:space:]')
             echo "Attempt $i: ClickHouse row count = ${COUNT:-<empty>}"
             case "$COUNT" in
@@ -131,12 +167,13 @@ jobs:
         env:
           CLICKHOUSE_HOST: localhost
           CLICKHOUSE_PORT: "8123"
-          CLICKHOUSE_USER: inkomoko_admin
-          CLICKHOUSE_PASSWORD: inkomoko_password
+          CLICKHOUSE_USER: ${{ env.CLICKHOUSE_USER }}
+          CLICKHOUSE_PASSWORD: ${{ env.CLICKHOUSE_PASSWORD }}
         run: |
-          pip install "dbt-clickhouse~=1.8.0" mashumaro==3.13.1
+          pip install -r src/requirements-dbt.txt
           dbt run --project-dir dbt_project --profiles-dir dbt_project
           dbt test --project-dir dbt_project --profiles-dir dbt_project
+          dbt source freshness --project-dir dbt_project --profiles-dir dbt_project
 
       - name: Verify the CDC observability exporter is reporting real metrics
         run: |
