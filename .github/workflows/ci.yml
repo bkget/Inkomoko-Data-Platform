@@ -85,14 +85,8 @@ jobs:
             -e AIRFLOW__CORE__LOAD_EXAMPLES=false \
             -v "${{ github.workspace }}/airflow_dags:/opt/dags" \
             apache/airflow:2.9.3-python3.11 \
-            bash -c "pip install --no-cache-dir -q 'psycopg[binary]==3.3.5' && \
-              python -c \"
-            from airflow.models import DagBag
-            db = DagBag('/opt/dags', include_examples=False)
-            assert not db.import_errors, db.import_errors
-            assert 'inkomoko_kiva_pipeline' in db.dags, list(db.dags)
-            print('DAG import OK:', list(db.dags))
-            \""
+            bash -c "pip install --no-cache-dir --disable-pip-version-check -q 'psycopg[binary]==3.3.5' && \
+              python -c \"from airflow.models import DagBag; db = DagBag('/opt/dags', include_examples=False); assert not db.import_errors, db.import_errors; assert 'inkomoko_kiva_pipeline' in db.dags, list(db.dags); print('DAG import OK:', list(db.dags))\""
 
   integration-test:
     name: 🔄 End-to-End CDC + dbt Integration Test
