@@ -111,7 +111,11 @@ jobs:
       - name: Start Postgres, Redpanda, Debezium, ClickHouse & observability sidecars
         run: |
           docker compose up -d --wait --wait-timeout 180 \
-            postgres redpanda debezium clickhouse cdc-monitor postgres-exporter
+            postgres redpanda debezium clickhouse cdc-monitor postgres-exporter || {
+              echo "::error::Container startup failed. Dumping service logs:"
+              docker compose logs postgres debezium redpanda clickhouse
+              exit 1
+            }
 
       - name: Register the Debezium CDC connector
         run: docker compose up connector-registrar --exit-code-from connector-registrar
