@@ -24,7 +24,7 @@ default_args = {
 def _postgres_count():
     """Live source-of-truth row count in the OLTP table."""
     with psycopg.connect(
-        host=os.environ.get("POSTGRES_HOST", "postgres"),
+        host=os.environ.get("POSTGRES_HOST", "locahost"),
         port=os.environ.get("POSTGRES_PORT", "5432"),
         dbname=os.environ.get("POSTGRES_DB"),
         user=os.environ.get("POSTGRES_USER"),
