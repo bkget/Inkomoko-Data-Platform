@@ -1,0 +1,99 @@
+{
+  "schema": {
+    "type": "record",
+    "name": "KivaLoan",
+    "namespace": "io.inkomoko.cdc.raw_data",
+    "doc": "CDC event value for raw_data.kiva_loans. Mirrors the PostgreSQL table schema. All nullable fields use Avro union [null, <type>] with default null to allow forward-compatible schema evolution — adding new nullable columns does not break existing consumers.",
+    "fields": [
+      {
+        "name": "id",
+        "type": "int",
+        "doc": "Primary key — Kiva loan ID"
+      },
+      {
+        "name": "name",
+        "type": ["null", "string"],
+        "default": null,
+        "doc": "Borrower name"
+      },
+      {
+        "name": "status",
+        "type": ["null", "string"],
+        "default": null,
+        "doc": "Loan status (e.g. funded, expired, refunded)"
+      },
+      {
+        "name": "funded_amount",
+        "type": ["null", "string"],
+        "default": null,
+        "doc": "Amount funded — serialized as string per decimal.handling.mode=string to avoid floating-point precision loss"
+      },
+      {
+        "name": "loan_amount",
+        "type": ["null", "string"],
+        "default": null,
+        "doc": "Total loan amount requested — serialized as string"
+      },
+      {
+        "name": "activity",
+        "type": ["null", "string"],
+        "default": null,
+        "doc": "Business activity category"
+      },
+      {
+        "name": "sector",
+        "type": ["null", "string"],
+        "default": null,
+        "doc": "Economic sector"
+      },
+      {
+        "name": "country",
+        "type": ["null", "string"],
+        "default": null,
+        "doc": "Country of the borrower"
+      },
+      {
+        "name": "town",
+        "type": ["null", "string"],
+        "default": null,
+        "doc": "Town or city of the borrower"
+      },
+      {
+        "name": "posted_date",
+        "type": ["null", "string"],
+        "default": null,
+        "doc": "Timestamp when the loan was posted on Kiva — serialized as ISO-8601 string by Debezium"
+      },
+      {
+        "name": "ingested_at",
+        "type": ["null", "string"],
+        "default": null,
+        "doc": "Audit: timestamp when the row was ingested into PostgreSQL"
+      },
+      {
+        "name": "updated_at",
+        "type": ["null", "string"],
+        "default": null,
+        "doc": "Audit: timestamp of last update"
+      },
+      {
+        "name": "__op",
+        "type": ["null", "string"],
+        "default": null,
+        "doc": "CDC operation type added by Debezium SMT: c=create, u=update, d=delete, r=read (snapshot)"
+      },
+      {
+        "name": "__ts_ms",
+        "type": ["null", "long"],
+        "default": null,
+        "doc": "CDC event timestamp in milliseconds since epoch, added by Debezium SMT"
+      },
+      {
+        "name": "__deleted",
+        "type": ["null", "string"],
+        "default": null,
+        "doc": "Soft-delete marker added by Debezium delete.handling.mode=rewrite. Value is 'true' for deleted rows."
+      }
+    ]
+  }
+}

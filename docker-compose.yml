@@ -68,11 +68,14 @@ services:
       - "0.0.0.0:8082"
       - --advertise-pandaproxy-addr
       - "localhost:8082"
+      - --schema-registry-addr
+      - "0.0.0.0:8081"
     volumes:
       - redpanda_data:/var/lib/redpanda/data
     ports:
       - "9092:9092"
       - "8082:8082"
+      - "8085:8081"   # Schema Registry HTTP API (host:8085 → container:8081)
     healthcheck:
       test: ["CMD-SHELL", "rpk cluster info"]
       interval: 10s
@@ -84,8 +87,13 @@ services:
           memory: 512M
 
   # --- debezium: Kafka Connect worker streaming PostgreSQL logical replication WAL changes ---
+  # Built from Dockerfile.debezium which extends quay.io/debezium/connect:2.5 with the
+  # Confluent Avro Converter plugin, enabling Avro serialization against Redpanda's schema registry.
   debezium:
-    image: quay.io/debezium/connect:2.5
+    build:
+      context: .
+      dockerfile: Dockerfile.debezium
+    image: inkomoko-debezium:2.5
     container_name: inkomoko_debezium
     restart: unless-stopped
     environment:
@@ -97,11 +105,14 @@ services:
       CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: "1"
       CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: "1"
       CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: "1"
-      # Ensuring JSON structure is clean for ClickHouse
+      # Key stays as JSON (primary key fields don't need schema evolution handling)
       KEY_CONVERTER: org.apache.kafka.connect.json.JsonConverter
-      VALUE_CONVERTER: org.apache.kafka.connect.json.JsonConverter
       KEY_CONVERTER_SCHEMAS_ENABLE: "false"
-      VALUE_CONVERTER_SCHEMAS_ENABLE: "false"
+      # Value uses Avro — every CDC message is validated against the schema registry
+      # before it lands on the topic. Schema is auto-registered on first write and
+      # evolves forward-compatibly (new nullable columns are allowed; breaking changes rejected).
+      VALUE_CONVERTER: io.confluent.connect.avro.AvroConverter
+      VALUE_CONVERTER_SCHEMA_REGISTRY_URL: "http://redpanda:8081"
       # Enable the Jolokia JMX-over-HTTP agent (bundled in the Debezium image)
       # so the Debezium UI Metrics panel can reach http://debezium:8778/jolokia.
       # The entrypoint checks ENABLE_JOLOKIA (not ENABLE_JMX_AGENT) to attach
@@ -127,7 +138,33 @@ services:
           # Raised from 512M: Kafka Connect JVM baseline (~350-450M) + Jolokia. 512M, causing OOM kills before port 8083 ever binds.
           memory: 1G
 
+  # --- schema-registrar: One-shot init job registering the kiva_loans Avro schema in Redpanda schema registry ---
+  # Runs before connector-registrar. Debezium's AvroConverter can auto-register schemas on first write,
+  # but pre-registering gives us:
+  # (1) explicit schema visibility in Redpanda Console immediately on startup,
+  # (2) ability to set compatibility mode (FORWARD) before any message is produced, and
+  # (3) a single source of truth for the schema that lives in version control.
+  schema-registrar:
+    image: alpine:3.20
+    container_name: inkomoko_schema_registrar
+    environment:
+      SCHEMA_REGISTRY_URL: http://redpanda:8081
+    volumes:
+      - ./config/kiva_loans_avro_schema.json:/config/kiva_loans_avro_schema.json:ro
+      - ./scripts/register_schema.sh:/register_schema.sh:ro
+    entrypoint: ["sh", "-c", "apk add --no-cache curl jq > /dev/null && sh /register_schema.sh"]
+    restart: "no"
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+
+
   # --- connector-registrar: One-shot init job auto-registering Debezium connector on startup ---
+
   # Renders config/debezium_postgres_source.json.template with the live .env credentials and POSTs it to Kafka Connect. 
   # This is what makes `docker compose up -d` alone sufficient to bring the pipeline to a working state — no manual
   # curl step required from the reviewer.
@@ -148,6 +185,8 @@ services:
     depends_on:
       debezium:
         condition: service_healthy
+      schema-registrar:
+        condition: service_completed_successfully
     deploy:
       resources:
         limits:
@@ -456,6 +495,8 @@ services:
       - "8080:8080"
     environment:
       KAFKA_BROKERS: redpanda:29092
+      KAFKA_SCHEMAREGISTRY_ENABLED: "true"
+      KAFKA_SCHEMAREGISTRY_URLS: "http://redpanda:8081"
     depends_on:
       redpanda:
         condition: service_healthy
@@ -463,6 +504,7 @@ services:
       resources:
         limits:
           memory: 256M
+
 
   # --- debezium-ui: Web console for viewing Debezium CDC connector configurations and status ---
   debezium-ui:
