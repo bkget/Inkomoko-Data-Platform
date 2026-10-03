@@ -2,9 +2,18 @@ name: Inkomoko Data Platform CI/CD Pipeline
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main ]
+    paths-ignore: &ignored_paths
+      - 'README.md'
+      - 'docs/**'
+      - 'architecture.png'
+      - '.gitignore'
+      - '.gitattributes'
+      - 'Makefile'
+
   pull_request:
-    branches: [ main, master ]
+    branches: [main]
+    paths-ignore: *ignored_paths
 
 jobs:
   lint-and-unit-test:
