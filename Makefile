@@ -306,9 +306,9 @@ test: ## Run local Python unit tests for ingestion and cdc-monitor
 lint: ## Run flake8 syntax and styling checks across the repository
 	@echo -e "$(CYAN)[*] Running flake8 code quality checks...$(RESET)"
 	@if [ -f ./.venv/bin/flake8 ]; then \
-		./.venv/bin/flake8 src/ airflow_dags/ tests/ --count --select=E9,F63,F7,F82 --show-source --statistics; \
+		./.venv/bin/flake8 src/ airflow_dag/ tests/ --count --select=E9,F63,F7,F82 --show-source --statistics; \
 	elif command -v flake8 > /dev/null 2>&1; then \
-		flake8 src/ airflow_dags/ tests/ --count --select=E9,F63,F7,F82 --show-source --statistics; \
+		flake8 src/ airflow_dag/ tests/ --count --select=E9,F63,F7,F82 --show-source --statistics; \
 	else \
 		echo -e "$(YELLOW)[!] flake8 not found locally. Install via: pip install flake8$(RESET)"; \
 	fi

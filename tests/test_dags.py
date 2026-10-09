@@ -8,10 +8,10 @@ except ImportError:
 
 @unittest.skipIf(DagBag is None, "airflow is not installed in this environment")
 class TestAirflowDags(unittest.TestCase):
-    """Ensure every DAG in airflow_dags/ imports without errors."""
+    """Ensure every DAG in airflow_dag/ imports without errors."""
 
     def setUp(self):
-        self.dagbag = DagBag(dag_folder="airflow_dags", include_examples=False)
+        self.dagbag = DagBag(dag_folder="airflow_dag", include_examples=False)
 
     def test_no_import_errors(self):
         self.assertFalse(self.dagbag.import_errors, msg=self.dagbag.import_errors)

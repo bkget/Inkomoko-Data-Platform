@@ -123,7 +123,7 @@ Open your browser and navigate to **[http://localhost:8088](http://localhost:808
 5. Airflow runs `dbt test` to enforce data quality constraints (Unique IDs, Non-Null values, Accepted Statuses).
 6. Airflow runs `dbt source freshness` to enforce the staging-source freshness thresholds (`warn_after 15m` / `error_after 30m` in `dbt_project/models/staging/src_kiva.yml`).
 
-It also runs unattended every 15 minutes (`*/15 * * * *`, defined in `airflow_dags/inkomoko_kiva_pipeline.py`) once the Airflow container is up - frequent enough to keep the Kiva loan data close to real-time without hammering a free public API or forcing needlessly frequent full-refresh dbt rebuilds. The CDC path itself (Postgres → Debezium → Redpanda → ClickHouse) is already near-real-time independent of this schedule; the 15-minute cadence only controls how often we poll Kiva for new external data.
+It also runs unattended every 15 minutes (`*/15 * * * *`, defined in `airflow_dag/inkomoko_kiva_pipeline.py`) once the Airflow container is up - frequent enough to keep the Kiva loan data close to real-time without hammering a free public API or forcing needlessly frequent full-refresh dbt rebuilds. The CDC path itself (Postgres → Debezium → Redpanda → ClickHouse) is already near-real-time independent of this schedule; the 15-minute cadence only controls how often we poll Kiva for new external data.
 
 The per-run backfill depth is tunable via `.env` (wired end-to-end into the Airflow container and the ingest task): `KIVA_PAGES` (how many pages to pull) and `KIVA_PER_PAGE` (records per page) - defaulting to 3 × 100 = 300 loans per run.
 
