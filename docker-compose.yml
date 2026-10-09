@@ -107,12 +107,14 @@ services:
       CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: "1"
       # Key stays as JSON (primary key fields don't need schema evolution handling)
       KEY_CONVERTER: org.apache.kafka.connect.json.JsonConverter
-      KEY_CONVERTER_SCHEMAS_ENABLE: "false"
+      CONNECT_KEY_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      CONNECT_KEY_CONVERTER_SCHEMAS_ENABLE: "false"
       # Value uses Avro — every CDC message is validated against the schema registry
       # before it lands on the topic. Schema is auto-registered on first write and
       # evolves forward-compatibly (new nullable columns are allowed; breaking changes rejected).
       VALUE_CONVERTER: io.confluent.connect.avro.AvroConverter
-      VALUE_CONVERTER_SCHEMA_REGISTRY_URL: "http://redpanda:8081"
+      CONNECT_VALUE_CONVERTER: io.confluent.connect.avro.AvroConverter
+      CONNECT_VALUE_CONVERTER_SCHEMA_REGISTRY_URL: "http://redpanda:8081"
       # Enable the Jolokia JMX-over-HTTP agent (bundled in the Debezium image)
       # so the Debezium UI Metrics panel can reach http://debezium:8778/jolokia.
       # The entrypoint checks ENABLE_JOLOKIA (not ENABLE_JMX_AGENT) to attach

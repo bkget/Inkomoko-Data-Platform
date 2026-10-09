@@ -10,6 +10,7 @@ on:
       - '.gitignore'
       - '.gitattributes'
       - 'Makefile'
+      - 'LICENSE'
 
   pull_request:
     branches: [main]
@@ -126,8 +127,10 @@ jobs:
               exit 1
             }
 
-      - name: Register the Debezium CDC connector
-        run: docker compose up connector-registrar --exit-code-from connector-registrar
+      - name: Register Avro Schema and Debezium CDC Connector
+        run: |
+          docker compose up schema-registrar --exit-code-from schema-registrar
+          docker compose up connector-registrar --exit-code-from connector-registrar
 
       - name: Set up Python 3.11
         uses: actions/setup-python@v5

@@ -1,9 +1,10 @@
 {
   "schema": {
     "type": "record",
-    "name": "KivaLoan",
-    "namespace": "io.inkomoko.cdc.raw_data",
-    "doc": "CDC event value for raw_data.kiva_loans. Mirrors the PostgreSQL table schema. All nullable fields use Avro union [null, <type>] with default null to allow forward-compatible schema evolution — adding new nullable columns does not break existing consumers.",
+    "name": "Value",
+    "namespace": "cdc.raw_data.kiva_loans",
+    "connect.name": "cdc.raw_data.kiva_loans.Value",
+    "doc": "CDC event value for raw_data.kiva_loans. Mirrors the PostgreSQL table schema as emitted by Debezium ExtractNewRecordState SMT. All nullable fields use Avro union [null, <type>] with default null to allow forward-compatible schema evolution.",
     "fields": [
       {
         "name": "id",
@@ -60,21 +61,50 @@
       },
       {
         "name": "posted_date",
-        "type": ["null", "string"],
+        "type": [
+          "null",
+          {
+            "type": "long",
+            "connect.version": 1,
+            "connect.name": "io.debezium.time.MicroTimestamp"
+          }
+        ],
         "default": null,
-        "doc": "Timestamp when the loan was posted on Kiva — serialized as ISO-8601 string by Debezium"
+        "doc": "Timestamp when the loan was posted on Kiva — serialized as MicroTimestamp (microseconds since epoch)"
       },
       {
         "name": "ingested_at",
-        "type": ["null", "string"],
-        "default": null,
+        "type": [
+          {
+            "type": "long",
+            "connect.version": 1,
+            "connect.default": 0,
+            "connect.name": "io.debezium.time.MicroTimestamp"
+          },
+          "null"
+        ],
+        "default": 0,
         "doc": "Audit: timestamp when the row was ingested into PostgreSQL"
       },
       {
         "name": "updated_at",
+        "type": [
+          {
+            "type": "long",
+            "connect.version": 1,
+            "connect.default": 0,
+            "connect.name": "io.debezium.time.MicroTimestamp"
+          },
+          "null"
+        ],
+        "default": 0,
+        "doc": "Audit: timestamp of last update"
+      },
+      {
+        "name": "__deleted",
         "type": ["null", "string"],
         "default": null,
-        "doc": "Audit: timestamp of last update"
+        "doc": "Soft-delete marker added by Debezium delete.handling.mode=rewrite. Value is 'true' for deleted rows."
       },
       {
         "name": "__op",
@@ -87,12 +117,6 @@
         "type": ["null", "long"],
         "default": null,
         "doc": "CDC event timestamp in milliseconds since epoch, added by Debezium SMT"
-      },
-      {
-        "name": "__deleted",
-        "type": ["null", "string"],
-        "default": null,
-        "doc": "Soft-delete marker added by Debezium delete.handling.mode=rewrite. Value is 'true' for deleted rows."
       }
     ]
   }
