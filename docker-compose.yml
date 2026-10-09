@@ -87,12 +87,12 @@ services:
           memory: 512M
 
   # --- debezium: Kafka Connect worker streaming PostgreSQL logical replication WAL changes ---
-  # Built from Dockerfile.debezium which extends quay.io/debezium/connect:2.5 with the
+  # Built from docker_files/Dockerfile.debezium which extends quay.io/debezium/connect:2.5 with the
   # Confluent Avro Converter plugin, enabling Avro serialization against Redpanda's schema registry.
   debezium:
     build:
       context: .
-      dockerfile: Dockerfile.debezium
+      dockerfile: docker_files/Dockerfile.debezium
     image: inkomoko-debezium:2.5
     container_name: inkomoko_debezium
     restart: unless-stopped
@@ -233,7 +233,7 @@ services:
   airflow:
     build:
       context: .
-      dockerfile: Dockerfile.airflow
+      dockerfile: docker_files/Dockerfile.airflow
     image: inkomoko-airflow:2.9.3
     container_name: inkomoko_airflow
     environment:
@@ -283,7 +283,7 @@ services:
       # named volume preserves the SQLite metadata DB + task logs across
       # container recreation (`make clear` still wipes it via down -v).
       - airflow_data:/opt/airflow
-      - ./airflow_dags:/opt/airflow/dags
+      - ./airflow_dag:/opt/airflow/dags
       - ./src:/opt/airflow/src:ro
       - ./dbt_project:/opt/airflow/dbt_project
     depends_on:
@@ -307,7 +307,7 @@ services:
           memory: 1024M
 
   # --- dbt: Transformation environment running dbt-clickhouse models and tests ---
-  # deps are baked into the image (Dockerfile.dbt); the project itself is bind-mounted.
+  # deps are baked into the image (docker_files/Dockerfile.dbt); the project itself is bind-mounted.
   # The container also generates and serves the interactive dbt documentation site
   # (DAG lineage graph + column catalog) on :8081. `dbt run`/`dbt test` are invoked
   # via `docker exec` (independent of the foreground process), and the static server
@@ -317,7 +317,7 @@ services:
     image: inkomoko-dbt:1.0
     build:
       context: .
-      dockerfile: Dockerfile.dbt
+      dockerfile: docker_files/Dockerfile.dbt
     container_name: inkomoko_dbt
     command: >
       sh -c "dbt docs generate || echo 'dbt docs generate failed, serving last known state';
@@ -352,7 +352,7 @@ services:
     image: inkomoko-cdc-monitor:1.0
     build:
       context: .
-      dockerfile: Dockerfile.cdc-monitor
+      dockerfile: docker_files/Dockerfile.cdc-monitor
     container_name: inkomoko_cdc_monitor
     working_dir: /app
     volumes:
