@@ -236,6 +236,7 @@ services:
       dockerfile: docker_files/Dockerfile.airflow
     image: inkomoko-airflow:2.9.3
     container_name: inkomoko_airflow
+    restart: unless-stopped
     environment:
       AIRFLOW__CORE__EXECUTOR: SequentialExecutor
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: sqlite:////opt/airflow/airflow.db
@@ -275,7 +276,8 @@ services:
       airflow users create --username $$AIRFLOW_WEB_USER --password $$AIRFLOW_WEB_PASSWORD --firstname Inkomoko --lastname Admin --role Admin --email $$AIRFLOW_WEB_EMAIL || true;
       (i=0; until airflow dags list | grep -q inkomoko_kiva_pipeline; do sleep 5; i=$$((i+5)); [ $$i -ge 120 ] && break; done;
       airflow dags trigger inkomoko_kiva_pipeline || true) &
-      (while true; do airflow webserver --port 8080; sleep 2; done) &
+      rm -f /opt/airflow/airflow-webserver*.pid;
+      (while true; do rm -f /opt/airflow/airflow-webserver*.pid; airflow webserver --port 8080; sleep 2; done) &
       exec airflow scheduler"
     ports:
       - "8088:8080" # Exposed on port 8088 to avoid conflict with Redpanda Console on 8080
@@ -302,9 +304,9 @@ services:
     deploy:
       resources:
         limits:
-          # Ultra-lightweight footprint: 1 web worker + 1 scheduler process + SQLite
-          # fits comfortably in 1024M for standalone operation with concurrent dbt tasks.
-          memory: 1024M
+          # Standalone Airflow runs webserver + scheduler + in-container dbt tasks;
+          # 2048M gives comfortable headroom to avoid kernel cgroup OOM kills.
+          memory: 2048M
 
   # --- dbt: Transformation environment running dbt-clickhouse models and tests ---
   # deps are baked into the image (docker_files/Dockerfile.dbt); the project itself is bind-mounted.
